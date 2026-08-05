@@ -1,0 +1,16 @@
+# Tratamento de dados
+pandas>=2.2
+openpyxl>=3.1
+beautifulsoup4>=4.12
+
+# Automação de navegador
+# (o proprio Selenium 4.6+ resolve o chromedriver automaticamente -
+# webdriver-manager nao esta em uso; pyautogui sera adicionado apenas se/quando
+# alguma etapa realmente precisar de automacao de tela fora do Selenium)
+selenium>=4.20
+
+# Utilitários
+python-dotenv>=1.0
+
+# Testes
+pytest>=8.0

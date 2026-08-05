@@ -1,0 +1,11 @@
+{
+  "_comentario": "Cadastro de clientes e WhatsApp para envio da mensagem de texto com a posição das entregas. Preencha com CNPJ SEM pontuação (14 dígitos) e telefone no formato internacional (55DDDNUMERO). Nenhum dado real deve ser commitado em repositório público.",
+
+  "clientes": [
+    {
+      "cnpj": "00000000000000",
+      "nome": "CLIENTE EXEMPLO LTDA",
+      "whatsapp": "5584900000000"
+    }
+  ]
+}

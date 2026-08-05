@@ -1,0 +1,10 @@
+{
+  "_comentario": "Regra definida pelo usuario: previsao = data de emissao + N dias corridos (sem excluir fim de semana). N depende de o pedido ja ter sido embarcado (ja possui numero de manifesto) ou nao.",
+
+  "data_base_padrao": "data_emissao",
+
+  "dias_se_embarcado": 5,
+  "dias_se_nao_embarcado": 7,
+
+  "excluir_sabados_domingos": false
+}

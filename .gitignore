@@ -1,0 +1,12 @@
+.env
+__pycache__/
+*.pyc
+
+# Dados reais (planilhas baixadas, saidas geradas e logs) nunca devem ser
+# versionados - apenas a estrutura de pastas (.gitkeep) fica no repositorio.
+entrada/*
+!entrada/.gitkeep
+saida/*
+!saida/.gitkeep
+logs/*
+!logs/.gitkeep
