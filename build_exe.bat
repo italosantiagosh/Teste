@@ -1,8 +1,15 @@
 @echo off
 setlocal enabledelayedexpansion
 
+rem Garante que os comandos rodem NESTA pasta (onde este .bat esta),
+rem nao importa de onde ele foi chamado (atalho, "Executar como
+rem administrador" etc. podem abrir com outra pasta atual, ex.: System32).
+cd /d "%~dp0"
+
 echo ============================================================
 echo  Gerando o executavel da Automacao Transportadora (Windows)
+echo ============================================================
+echo  Pasta do projeto: %cd%
 echo ============================================================
 echo.
 
