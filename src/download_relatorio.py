@@ -260,12 +260,12 @@ def solicitar_geracao_relatorio(
         driver.execute_script("arguments[0].click();", link_opcao_156)
         logger.info("Link 'Abrir a opção 156 agora' acionado após 10s.")
 
-        WebDriverWait(driver, 40).until(
-            lambda d: '/bin/ssw1440' in d.current_url.lower()
-            or bool(d.find_elements(By.ID, ID_TABELA_FILA))
-        )
+        # O SSW abre a fila em uma janela própria (igual às opções 455/023) -
+        # sem trocar o foco do Selenium para ela, `driver.current_url` continua
+        # apontando para a janela antiga e a espera nunca é satisfeita.
+        sistema.focar_janela_por_url(driver, "/bin/ssw1440", timeout=40)
         logger.info("Tela da fila aberta pelo aviso de processamento: %s", driver.current_url)
-    except TimeoutException:
+    except (TimeoutException, TimeoutError):
         # Se o painel não aparecer, aguardar_e_baixar_relatorio usa o link
         # tradicional "Ver fila" como fallback.
         logger.warning(
@@ -443,10 +443,11 @@ def aguardar_e_baixar_relatorio(
             "else { document.getElementById('42').click(); }"
         )
 
-        WebDriverWait(driver, 40).until(
-            lambda d: '/bin/ssw1440' in d.current_url.lower()
-            or bool(d.find_elements(By.ID, ID_TABELA_FILA))
-        )
+        # Mesmo problema do painel: a fila abre em janela própria e o
+        # Selenium precisa trocar de foco explicitamente para ela, senão
+        # `driver.current_url`/`find_elements` continuam olhando para a
+        # janela antiga (ssw0230) e a espera nunca é satisfeita.
+        sistema.focar_janela_por_url(driver, "/bin/ssw1440", timeout=40)
         logger.info("Tela da fila aberta: %s", driver.current_url)
 
     tempo_decorrido = espera_inicial_segundos if not ja_esta_na_fila else 0
