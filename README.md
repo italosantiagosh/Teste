@@ -20,10 +20,10 @@ validado pelo usuário.
 | 4 | Captura da tabela de motoristas | ✅ implementado e testado com HTML real (46 registros, tabela sem paginação) |
 | 5 | Cruzamento dos dados | ✅ implementado e testado (com_motorista, sem_motorista, motoristas_sem_pedido, conflitos) |
 | 6 | Previsão de entrega | ✅ implementado: 5 dias corridos se embarcado, 7 se não, a partir da data de emissão |
-| 7 | Pesquisa de clientes | ⏳ ainda não iniciado — será só por nome (relatório não tem CNPJ) |
-| 8 | Mensagem de texto (substitui a imagem) | ⏳ ainda não iniciado |
-| 9 | Envio pelo WhatsApp Web | ⏳ ainda não iniciado |
-| 10 | Fluxo principal (`main.py`) | ⏳ esqueleto de menu criado |
+| 7 | Pesquisa de clientes | ✅ |
+| 8 | Mensagem de texto (substitui a imagem) | ✅ |
+| 9 | Envio pelo WhatsApp Web | ✅ |
+| 10 | Fluxo principal (`main.py`) | ✅ |
 
 ## Mudança em relação ao plano original
 
