@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import re
+import sys
 import unicodedata
 from pathlib import Path
 
@@ -45,9 +46,13 @@ def configurar_logging(logs_dir: Path, nome_arquivo: str = "automacao.log") -> l
         handler_arquivo.setFormatter(formato)
         logger.addHandler(handler_arquivo)
 
-        handler_console = logging.StreamHandler()
-        handler_console.setFormatter(formato)
-        logger.addHandler(handler_console)
+        # Em um executável do PyInstaller gerado sem console (janela sem
+        # terminal), sys.stderr/stdout vêm como None - adicionar o
+        # StreamHandler nesse caso derruba o programa no primeiro log.
+        if sys.stderr is not None:
+            handler_console = logging.StreamHandler()
+            handler_console.setFormatter(formato)
+            logger.addHandler(handler_console)
 
     return logger
 

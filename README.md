@@ -23,7 +23,7 @@ validado pelo usuário.
 | 7 | Pesquisa de clientes | ✅ |
 | 8 | Mensagem de texto (substitui a imagem) | ✅ |
 | 9 | Envio pelo WhatsApp Web | ✅ |
-| 10 | Fluxo principal (`main.py`) | ✅ |
+| 10 | Fluxo principal (`main.py` / interface gráfica) | ✅ |
 
 ## Mudança em relação ao plano original
 
@@ -53,6 +53,38 @@ formatada a partir de um template configurável. Por isso:
    ```
 
 Se faltar alguma biblioteca, o programa agora avisa exatamente qual instalar em vez de travar com um erro técnico. Se acontecer outro erro, ele mostra o motivo direto no terminal (e também salva o detalhe completo em `logs/automacao.log`).
+
+## Interface gráfica (sem precisar de terminal)
+
+Além do menu de terminal (`python main.py`), existe uma janela simples com
+um botão para cada opção, em `interface_grafica.py`:
+
+```
+python interface_grafica.py
+```
+
+É o mesmo programa por trás — os textos que apareceriam no terminal
+aparecem numa caixa de texto na janela, e o que antes era digitado no
+terminal (período de datas, confirmações, senha) agora é pedido numa
+caixinha de diálogo. Só uma ação roda por vez (os botões ficam
+desabilitados enquanto uma está em andamento).
+
+## Como gerar um executável (.exe), para não precisar abrir o VS Code
+
+1. Nesta pasta do projeto, dê duplo clique em `build_exe.bat` (ou rode
+   `build_exe.bat` num terminal). Isso instala as bibliotecas necessárias
+   e gera `AutomacaoTransportadora.exe` **nesta mesma pasta**.
+2. Depois de gerado, use direto o `AutomacaoTransportadora.exe` — pode
+   criar um atalho dele na Área de Trabalho.
+
+**Importante:** o `.exe` precisa continuar na mesma pasta que `config\`,
+`.env`, `entrada\`, `saida\` e `logs\` — ele lê e cria esses arquivos e
+pastas ao lado de onde está, não "dentro" dele. Se mover o `.exe`
+sozinho para outro lugar, mova a pasta inteira (ou pelo menos `config\`
+e `.env` junto).
+
+Gerar o `.exe` só funciona rodando `build_exe.bat` no Windows (o
+PyInstaller empacota para o sistema operacional onde é executado).
 
 ## Como rodar os testes do módulo já implementado
 

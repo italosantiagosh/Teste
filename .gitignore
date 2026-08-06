@@ -10,3 +10,10 @@ saida/*
 !saida/.gitkeep
 logs/*
 !logs/.gitkeep
+
+# Artefatos gerados pelo PyInstaller ao criar o executavel - nao versionar
+# (o .exe final e binario, grande, e depende da maquina onde foi gerado).
+build/
+dist/
+*.spec
+AutomacaoTransportadora.exe

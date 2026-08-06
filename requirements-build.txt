@@ -1,0 +1,4 @@
+# Dependência apenas para GERAR o executável (.exe) - não é necessária
+# para rodar o programa normalmente com "python main.py".
+# Ver README.md, seção "Como gerar um executável (.exe)".
+pyinstaller>=6.0

@@ -14,12 +14,20 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from dotenv import load_dotenv
 
-BASE_DIR = Path(__file__).resolve().parent
+if getattr(sys, "frozen", False):
+    # Empacotado com PyInstaller: __file__ aponta para uma pasta temporária
+    # de extração (sys._MEIPASS), não para onde o .exe realmente está. Usar
+    # sys.executable garante que config/, entrada/, saida/ e logs/ fiquem
+    # ao lado do .exe de verdade, onde o usuário espera encontrá-los.
+    BASE_DIR = Path(sys.executable).resolve().parent
+else:
+    BASE_DIR = Path(__file__).resolve().parent
 
 _caminho_env = BASE_DIR / ".env"
 if not load_dotenv(_caminho_env):
