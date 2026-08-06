@@ -67,8 +67,9 @@ def calcular_previsao_dataframe(
     """Aplica `calcular_previsao_entrega` a todas as linhas do DataFrame.
 
     Usa `COLUNAS.col_data_emissao` como data-base e considera "embarcado"
-    quando a coluna de manifesto (`COLUNAS.col_chave_cruzamento` /
-    'manifesto') não está vazia.
+    quando pelo menos uma das colunas de manifesto
+    (`COLUNAS.col_chave_cruzamento` ou `COLUNAS.col_chave_cruzamento_fallback`
+    — hoje, primeiro ou último manifesto) não está vazia.
 
     Args:
         df: DataFrame já tratado (saída de `tratamento_planilha`).
@@ -78,7 +79,10 @@ def calcular_previsao_dataframe(
         O mesmo DataFrame com a coluna de previsão calculada adicionada.
     """
     col_data = COLUNAS.col_data_emissao
-    col_manifesto = COLUNAS.col_chave_cruzamento
+    colunas_manifesto = [
+        c for c in (COLUNAS.col_chave_cruzamento, COLUNAS.col_chave_cruzamento_fallback)
+        if c in df.columns
+    ]
 
     if col_data not in df.columns:
         logger.warning(
@@ -88,15 +92,18 @@ def calcular_previsao_dataframe(
         df[coluna_saida] = PREVISAO_NAO_DEFINIDA
         return df
 
-    if col_manifesto not in df.columns:
+    if not colunas_manifesto:
         logger.warning(
-            "Coluna de manifesto ('%s') não encontrada — todos os pedidos "
-            "serão tratados como NÃO embarcados.",
-            col_manifesto,
+            "Nenhuma coluna de manifesto ('%s'/'%s') encontrada — todos os "
+            "pedidos serão tratados como NÃO embarcados.",
+            COLUNAS.col_chave_cruzamento,
+            COLUNAS.col_chave_cruzamento_fallback,
         )
         embarcado_serie = pd.Series(False, index=df.index)
     else:
-        embarcado_serie = df[col_manifesto].notna() & (df[col_manifesto].astype(str).str.strip() != "")
+        embarcado_serie = pd.Series(False, index=df.index)
+        for col in colunas_manifesto:
+            embarcado_serie |= df[col].notna() & (df[col].astype(str).str.strip() != "")
 
     previsoes = [
         calcular_previsao_entrega(data_base, embarcado)

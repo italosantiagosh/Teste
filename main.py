@@ -133,44 +133,210 @@ def opcao_2_capturar_motoristas() -> None:
         driver.quit()
 
 
+def _localizar_relatorio_baixado():
+    """Mais recente .csv/.xlsx em entrada/ - baixado pela opção 1 ou
+    colocado manualmente na pasta. Usado como sugestão padrão na opção 3."""
+    from config import ENTRADA_DIR
+
+    candidatos = [
+        p for p in ENTRADA_DIR.glob("*")
+        if p.is_file() and p.suffix.lower() in {".csv", ".xlsx"}
+    ]
+    if not candidatos:
+        return None
+    return max(candidatos, key=lambda p: p.stat().st_mtime)
+
+
 def opcao_3_tratar_e_cruzar() -> None:
     from pathlib import Path
+
+    import pandas as pd
+
+    from config import SAIDA_DIR
+    from src import cruzamento
     from src import tratamento_planilha as tp
 
-    caminho_str = input(
-        "Caminho do arquivo baixado (ex.: entrada/relatorio_entregas.xlsx): "
-    ).strip()
+    sugestao = _localizar_relatorio_baixado()
+    if sugestao:
+        resposta = input(
+            f"Usar o arquivo mais recente encontrado em entrada/ ({sugestao.name})? "
+            "Pressione Enter para usá-lo, ou digite outro caminho: "
+        ).strip()
+        caminho_str = resposta or str(sugestao)
+    else:
+        caminho_str = input(
+            "Nenhum arquivo encontrado em entrada/. Informe o caminho do "
+            "arquivo baixado (ex.: entrada/relatorio050826.csv): "
+        ).strip()
+
     if not caminho_str:
         print("Nenhum caminho informado.")
         return
 
+    caminho_relatorio = Path(caminho_str)
+    caminho_motoristas = SAIDA_DIR / "motoristas_capturados.xlsx"
+
     try:
-        df = tp.tratar_planilha(Path(caminho_str))
-        print(f"Planilha tratada com sucesso. {len(df)} linhas finais.")
-        print("Cruzamento com motoristas (Etapa 5) ainda não implementado.")
-    except FileNotFoundError as e:
+        df_pedidos = tp.tratar_planilha(caminho_relatorio)
+        print(f"Planilha tratada com sucesso. {len(df_pedidos)} linhas finais.")
+
+        if not caminho_motoristas.exists():
+            print(
+                "Erro: a tabela de motoristas ainda não foi encontrada em "
+                f"{caminho_motoristas}. Execute primeiro a opção 2."
+            )
+            return
+
+        df_motoristas = pd.read_excel(caminho_motoristas, dtype=str)
+        resultados = cruzamento.cruzar_pedidos_motoristas(
+            df_pedidos,
+            df_motoristas,
+            coluna_primeiro_manifesto="primeiro_manifesto",
+            coluna_ultimo_manifesto="ultimo_manifesto",
+            coluna_chave_motoristas="manifesto",
+        )
+
+        nome_base = caminho_relatorio.stem
+        caminho_final = SAIDA_DIR / f"{nome_base}_com_motoristas.xlsx"
+        caminho_sem = SAIDA_DIR / "pedidos_sem_motorista.xlsx"
+        caminho_sobras = SAIDA_DIR / "motoristas_sem_pedido.xlsx"
+        caminho_conflitos = SAIDA_DIR / "conflitos_manifestos.xlsx"
+
+        resultados["relatorio_completo"].to_excel(caminho_final, index=False)
+        resultados["sem_motorista"].to_excel(caminho_sem, index=False)
+        resultados["motoristas_sem_pedido"].to_excel(caminho_sobras, index=False)
+        resultados["conflitos"].to_excel(caminho_conflitos, index=False)
+
+        qtd_com = len(resultados["com_motorista"])
+        qtd_sem = len(resultados["sem_motorista"])
+        print(f"Cruzamento concluído: {qtd_com} pedidos com motorista e {qtd_sem} sem correspondência.")
+        print(f"Relatório final salvo em: {caminho_final}")
+        if qtd_sem:
+            print(f"Pedidos para conferência salvos em: {caminho_sem}")
+
+    except (FileNotFoundError, ValueError, pd.errors.ParserError) as e:
         print(f"Erro: {e}")
 
 
+def _localizar_relatorio_final():
+    from config import SAIDA_DIR
+    candidatos = sorted(
+        SAIDA_DIR.glob("*_com_motoristas.xlsx"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    if not candidatos:
+        raise FileNotFoundError(
+            "Nenhum relatório com motoristas foi encontrado. Execute primeiro a opção 3."
+        )
+    return candidatos[0]
+
+
+def _carregar_ou_selecionar_cliente():
+    import json
+    import pandas as pd
+    from config import SAIDA_DIR
+    from src import clientes
+
+    planilha_selecionada = SAIDA_DIR / "cliente_selecionado.xlsx"
+    info_selecionada = SAIDA_DIR / "cliente_selecionado.json"
+    usar_anterior = False
+    if planilha_selecionada.exists() and info_selecionada.exists():
+        resposta = input("Usar o último cliente selecionado? (s/n): ").strip().lower()
+        usar_anterior = resposta == "s"
+
+    if usar_anterior:
+        dados = pd.read_excel(planilha_selecionada)
+        info = json.loads(info_selecionada.read_text(encoding="utf-8"))
+        return dados, info
+
+    caminho = _localizar_relatorio_final()
+    df = pd.read_excel(caminho)
+    dados, info = clientes.selecionar_cliente_interativo(df)
+    clientes.salvar_selecao(dados, info, SAIDA_DIR)
+    return dados, info
+
+
 def opcao_4_consultar_cliente() -> None:
-    from src import clientes  # noqa: F401
-    print("Etapa 7 (consulta de cliente) ainda não implementada.")
+    dados, info = _carregar_ou_selecionar_cliente()
+    print(f"\nCliente: {info['nome']}")
+    if info.get("cnpj"):
+        print(f"CNPJ: {info['cnpj']}")
+    print(f"Quantidade de cargas: {len(dados)}")
+
+    colunas_exibir = [
+        c for c in ["pedido", "cidade", "status", "motorista", "previsao_entrega"]
+        if c in dados.columns
+    ]
+    if colunas_exibir:
+        print(dados[colunas_exibir].to_string(index=False))
 
 
 def opcao_5_gerar_mensagem() -> None:
-    from src import mensagem  # noqa: F401
-    print("Etapa 8 (montagem da mensagem de texto) ainda não implementada.")
+    from config import SAIDA_DIR
+    from src import mensagem
+
+    dados, info = _carregar_ou_selecionar_cliente()
+    texto = mensagem.montar_mensagem_cliente(info["nome"], dados)
+    blocos = mensagem.dividir_mensagem(texto)
+
+    caminho = SAIDA_DIR / "mensagem_cliente.txt"
+    caminho.write_text("\n\n---\n\n".join(blocos), encoding="utf-8")
+    print("\n" + "=" * 60)
+    print("\n\n---\n\n".join(blocos))
+    print("=" * 60)
+    print(f"Mensagem salva em: {caminho}")
+
+
+def _buscar_telefone_cliente(info: dict) -> str:
+    from config import CLIENTES
+    from src.utils import normalizar_cnpj, normalizar_texto
+
+    cnpj_alvo = normalizar_cnpj(info.get("cnpj", ""))
+    nome_alvo = normalizar_texto(info.get("nome", ""))
+    for cadastro in CLIENTES.get("clientes", []):
+        if cnpj_alvo and normalizar_cnpj(cadastro.get("cnpj", "")) == cnpj_alvo:
+            return str(cadastro.get("whatsapp", ""))
+        if nome_alvo and normalizar_texto(cadastro.get("nome", "")) == nome_alvo:
+            return str(cadastro.get("whatsapp", ""))
+    return ""
 
 
 def opcao_6_preparar_whatsapp() -> None:
-    from src import whatsapp  # noqa: F401
-    print("Etapa 9 (envio pelo WhatsApp) ainda não implementada.")
+    from src import mensagem, whatsapp
+
+    dados, info = _carregar_ou_selecionar_cliente()
+    texto = mensagem.montar_mensagem_cliente(info["nome"], dados)
+    blocos = mensagem.dividir_mensagem(texto)
+    telefone = _buscar_telefone_cliente(info)
+    if not telefone:
+        telefone = input("Telefone com DDI e DDD (ex.: 5584999999999): ").strip()
+
+    for indice, bloco in enumerate(blocos, 1):
+        if len(blocos) > 1:
+            print(f"Preparando mensagem {indice} de {len(blocos)}.")
+        if not whatsapp.preparar_e_enviar_mensagem(telefone, bloco):
+            break
+        if indice < len(blocos):
+            input("Depois de enviar no WhatsApp, pressione Enter para abrir a próxima parte...")
 
 
 def opcao_7_processo_completo() -> None:
-    print("Processo completo depende de todas as etapas estarem prontas.")
-    print("Ainda faltam as Etapas 2, 4, 5, 6, 7, 8 e 9.")
+    print("\nFluxo completo usando os arquivos já disponíveis.")
+    print("A etapa de download permanece manual por enquanto.")
 
+    executar_captura = input("Capturar agora a tabela de motoristas? (s/n): ").strip().lower()
+    if executar_captura == "s":
+        opcao_2_capturar_motoristas()
+
+    opcao_3_tratar_e_cruzar()
+    resposta = input("Consultar um cliente e preparar a mensagem agora? (s/n): ").strip().lower()
+    if resposta == "s":
+        opcao_4_consultar_cliente()
+        opcao_5_gerar_mensagem()
+        enviar = input("Preparar também no WhatsApp Web? (s/n): ").strip().lower()
+        if enviar == "s":
+            opcao_6_preparar_whatsapp()
 
 def main() -> None:
     acoes = {

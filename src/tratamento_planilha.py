@@ -179,7 +179,11 @@ def tratar_identificadores(df: pd.DataFrame) -> pd.DataFrame:
     e dois pedidos iguais só com essa diferença de formato deixariam de
     ser identificados como duplicados.
     """
-    colunas_identificador = {COLUNAS.col_pedido, COLUNAS.col_chave_cruzamento}
+    colunas_identificador = {
+        COLUNAS.col_pedido,
+        COLUNAS.col_chave_cruzamento,
+        COLUNAS.col_chave_cruzamento_fallback,
+    }
 
     for coluna in colunas_identificador:
         if coluna not in df.columns:

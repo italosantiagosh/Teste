@@ -5,9 +5,13 @@ beautifulsoup4>=4.12
 
 # Automação de navegador
 # (o proprio Selenium 4.6+ resolve o chromedriver automaticamente -
-# webdriver-manager nao esta em uso; pyautogui sera adicionado apenas se/quando
-# alguma etapa realmente precisar de automacao de tela fora do Selenium)
+# webdriver-manager nao esta em uso)
 selenium>=4.20
+
+# Automação de tela - usado apenas como ultimo recurso para o clique no
+# link "Baixar" da fila (455), quando nem o clique nativo do Selenium nem
+# o ActionChains conseguem iniciar o download.
+pyautogui>=0.9.54
 
 # Utilitários
 python-dotenv>=1.0

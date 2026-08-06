@@ -49,6 +49,45 @@ COLUNAS_TABELA_MOTORISTAS = [
 ID_TABELA = "tblsr"
 
 
+def _extrair_linhas_tabela_motoristas(driver) -> list[dict[str, str]]:
+    """Extrai diretamente as linhas da tabela #tblsr pelo JavaScript.
+
+    O SSW monta a tabela dinamicamente. Ler os dados no próprio DOM evita
+    depender de page_source, BeautifulSoup ou de um outerHTML capturado cedo
+    demais. A linha de cabeçalho não possui células ``td.srtd2`` e é ignorada.
+    """
+    return driver.execute_script(
+        r"""
+        const tabela = document.querySelector('table#tblsr');
+        if (!tabela) return [];
+
+        const nomes = [
+            'manifesto', 'gaiola_pallet', 'cavalo', 'carreta', 'motorista',
+            'origem', 'destino', 'unid', 'qt_ctrcs', 'peso_calculo',
+            'peso_real', 'saida', 'prev_chegada', 'chegada', 'ciot', 'awb',
+            'situacao_mdfe'
+        ];
+
+        return Array.from(tabela.querySelectorAll('tr.srtr2'))
+            .map(linha => Array.from(linha.querySelectorAll('td.srtd2')))
+            .filter(celulas => celulas.length > 0)
+            .map(celulas => {
+                const registro = {};
+                nomes.forEach((nome, indice) => {
+                    const celula = celulas[indice];
+                    registro[nome] = celula
+                        ? (celula.innerText || celula.textContent || '')
+                            .replace(/\u00a0/g, ' ')
+                            .replace(/\s+/g, ' ')
+                            .trim()
+                        : '';
+                });
+                return registro;
+            });
+        """
+    ) or []
+
+
 def _texto_celula(td) -> str:
     """Extrai o texto de uma célula <td>, tratando '&nbsp;' como vazio."""
     texto = td.get_text(strip=True)
@@ -115,36 +154,16 @@ def parsear_tabela_motoristas(html_tabela: str) -> pd.DataFrame:
 
 
 def capturar_tabela_motoristas(driver) -> pd.DataFrame:
-    """Captura a tabela de motoristas a partir de uma sessão Selenium ativa.
-
-    Pressupõe que a página com a tabela já está aberta e carregada (ex.:
-    após realizar a busca na tela 023). Pega o HTML via JavaScript
-    (mais robusto que iterar elementos pelo Selenium célula a célula) e
-    delega o parsing para `parsear_tabela_motoristas`.
-
-    Args:
-        driver: instância do WebDriver do Selenium, com a página já na
-            tela de resultado da consulta de manifestos.
-
-    Returns:
-        DataFrame com os motoristas capturados.
-
-    Raises:
-        Exception: se o elemento #tblsr não existir na página (ex.: busca
-            ainda não foi feita, ou o sistema mudou o id da tabela).
-    """
-    html_tabela = driver.execute_script(
-        f"var el = document.getElementById('{ID_TABELA}'); "
-        "return el ? el.outerHTML : null;"
-    )
-
-    if not html_tabela:
+    """Captura a tabela já carregada e devolve um DataFrame."""
+    registros = _extrair_linhas_tabela_motoristas(driver)
+    if not registros:
         raise RuntimeError(
-            f"Elemento com id '{ID_TABELA}' não encontrado na página. "
-            "Verifique se a busca de manifestos já foi realizada."
+            "A tabela #tblsr foi localizada, mas nenhuma linha de dados foi extraída."
         )
 
-    return parsear_tabela_motoristas(html_tabela)
+    df = pd.DataFrame(registros, columns=COLUNAS_TABELA_MOTORISTAS)
+    logger.info("Tabela de motoristas capturada: %d registros.", len(df))
+    return df
 
 
 # ---------------------------------------------------------------------------
@@ -158,6 +177,71 @@ def capturar_tabela_motoristas(driver) -> pd.DataFrame:
 ID_CAMPO_DATA_SAIDA_INICIO = "t_data_saida_ini"
 ID_CAMPO_DATA_SAIDA_FIM = "t_data_saida_fin"
 ID_BOTAO_PESQUISAR = "12"
+
+
+def _procurar_tabela_em_janelas_e_frames(driver) -> bool:
+    """Procura ``#tblsr`` em todas as janelas e frames disponíveis.
+
+    Quando encontra uma tabela com pelo menos uma linha de dados, deixa o
+    WebDriver focado exatamente na janela/frame onde ela está e retorna True.
+    """
+    from selenium.common.exceptions import (
+        NoSuchFrameException,
+        NoSuchWindowException,
+        StaleElementReferenceException,
+        WebDriverException,
+    )
+    from selenium.webdriver.common.by import By
+
+    def procurar_no_contexto() -> bool:
+        try:
+            if driver.execute_script(
+                "return document.querySelectorAll('#tblsr tr.srtr2 td.srtd2').length > 0;"
+            ):
+                return True
+        except WebDriverException:
+            return False
+
+        try:
+            frames = driver.find_elements(By.CSS_SELECTOR, "iframe, frame")
+        except WebDriverException:
+            return False
+
+        for indice in range(len(frames)):
+            try:
+                # Reobtém a lista porque o DOM pode mudar durante a busca.
+                frames_atuais = driver.find_elements(By.CSS_SELECTOR, "iframe, frame")
+                if indice >= len(frames_atuais):
+                    continue
+                driver.switch_to.frame(frames_atuais[indice])
+                if procurar_no_contexto():
+                    return True
+                driver.switch_to.parent_frame()
+            except (
+                NoSuchFrameException,
+                StaleElementReferenceException,
+                WebDriverException,
+            ):
+                try:
+                    driver.switch_to.parent_frame()
+                except WebDriverException:
+                    pass
+        return False
+
+    for handle in list(driver.window_handles):
+        try:
+            driver.switch_to.window(handle)
+            driver.switch_to.default_content()
+            if procurar_no_contexto():
+                logger.info(
+                    "Tabela de motoristas encontrada na janela: %s",
+                    driver.current_url,
+                )
+                return True
+        except (NoSuchWindowException, WebDriverException):
+            continue
+
+    return False
 
 
 def buscar_motoristas_por_periodo(
@@ -222,8 +306,15 @@ def buscar_motoristas_por_periodo(
         data_final.strftime("%d/%m/%Y"),
     )
 
-    WebDriverWait(driver, timeout).until(
-        EC.presence_of_element_located((By.ID, ID_TABELA))
+    # O resultado do SSW pode surgir em outra janela ou dentro de um frame.
+    # Procura em todos os contextos e mantém o foco naquele que contém #tblsr.
+    WebDriverWait(driver, max(timeout, 60), poll_frequency=0.5).until(
+        _procurar_tabela_em_janelas_e_frames
     )
 
-    return capturar_tabela_motoristas(driver)
+    df = capturar_tabela_motoristas(driver)
+    if df.empty:
+        logger.warning("A tabela foi encontrada, mas não possui registros no período informado.")
+    else:
+        logger.info("Captura concluída: %d manifestos/motoristas.", len(df))
+    return df

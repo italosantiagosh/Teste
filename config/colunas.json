@@ -1,6 +1,5 @@
 {
-  "_comentario": "Nomes reais das colunas do relatorio exportado do sistema SSW (relatorio*.csv). NAO ha coluna de CNPJ neste export - ver observacao no README sobre isso. 'Primeiro Manifesto' e o identificador usado para cruzar com a tabela de motoristas (tela 023 - Consulta e reimpressao de Manifesto), onde a mesma informacao aparece na coluna 'Manifesto'.",
-
+  "_comentario": "O cruzamento tenta primeiro 'Primeiro Manifesto' e usa 'Ultimo Manifesto' como fallback. A saída registra qual manifesto foi usado para auditoria.",
   "mapa_renomeacao": {
     "CTRC": "pedido",
     "Data de Emissao": "data_emissao",
@@ -9,16 +8,16 @@
     "Cliente Pagador": "pagador",
     "Cliente Destinatario": "cliente",
     "Cidade de Entrega": "cidade",
-    "Primeiro Manifesto": "manifesto",
+    "Primeiro Manifesto": "primeiro_manifesto",
     "Data do Primeiro Manifesto": "data_manifesto",
     "Placa do Cavalo": "placa_cavalo",
     "Placa da Carreta": "placa_carreta",
     "Descricao da Ultima Ocorrencia": "status",
     "Previsao de Entrega": "previsao_entrega",
     "Data da Entrega Realizada": "data_entrega_realizada",
-    "Quantidade de Dias de Atraso": "dias_atraso"
+    "Quantidade de Dias de Atraso": "dias_atraso",
+    "Ultimo Manifesto": "ultimo_manifesto"
   },
-
   "colunas_excluir": [
     "1",
     "Unidade Receptora",
@@ -31,7 +30,6 @@
     "Unidade Origem do Primeiro Manifesto",
     "Conferente de Carga",
     "Conferente de Descarga",
-    "Ultimo Manifesto",
     "Data do Ultimo Manifesto",
     "Unidade Destino do Ultimo Manifesto",
     "Ultimo Romaneio",
@@ -56,19 +54,17 @@
     "Observacao Tab Frete",
     "Unnamed: 49"
   ],
-
   "ordem_final": [
     "pedido",
     "cliente",
     "cidade",
     "data_emissao",
-    "manifesto",
+    "primeiro_manifesto",
+    "ultimo_manifesto",
     "placa_cavalo",
     "status",
-    "motorista",
     "previsao_entrega"
   ],
-
   "col_pedido": "pedido",
   "col_cnpj": "cnpj",
   "col_cliente": "cliente",
@@ -76,5 +72,6 @@
   "col_data_emissao": "data_emissao",
   "col_motorista": "motorista",
   "col_previsao": "previsao_entrega",
-  "col_chave_cruzamento": "manifesto"
+  "col_chave_cruzamento": "primeiro_manifesto",
+  "col_chave_cruzamento_fallback": "ultimo_manifesto"
 }

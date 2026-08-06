@@ -88,9 +88,12 @@ class ColunasConfig:
     col_data_emissao: str = _colunas_cfg.get("col_data_emissao", "data_emissao")
     col_motorista: str = _colunas_cfg.get("col_motorista", "motorista")
     col_previsao: str = _colunas_cfg.get("col_previsao", "previsao_entrega")
-    # Coluna usada como chave confiável no cruzamento pedidos <-> motoristas
-    # (configurável: pedido, nota fiscal, numero da carga, CT-e, etc.)
-    col_chave_cruzamento: str = _colunas_cfg.get("col_chave_cruzamento", "manifesto")
+    # Coluna usada como chave principal no cruzamento pedidos <-> motoristas
+    # (hoje: primeiro manifesto, com fallback para o último - ver
+    # src/cruzamento.py). Também usada para decidir se um pedido já foi
+    # embarcado (ver src/previsao_entrega.py).
+    col_chave_cruzamento: str = _colunas_cfg.get("col_chave_cruzamento", "primeiro_manifesto")
+    col_chave_cruzamento_fallback: str = _colunas_cfg.get("col_chave_cruzamento_fallback", "ultimo_manifesto")
 
 
 COLUNAS = ColunasConfig()

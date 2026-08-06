@@ -86,8 +86,8 @@ def test_tratar_planilha_remove_colunas_excluidas(df_tratado):
 
 def test_tratar_planilha_renomeia_colunas(df_tratado):
     for coluna_esperada in [
-        "pedido", "cliente", "cidade", "data_emissao", "manifesto",
-        "placa_cavalo", "status",
+        "pedido", "cliente", "cidade", "data_emissao", "primeiro_manifesto",
+        "ultimo_manifesto", "placa_cavalo", "status",
     ]:
         assert coluna_esperada in df_tratado.columns
 
@@ -113,10 +113,19 @@ def test_tratar_planilha_remove_ponto_zero_do_pedido(df_tratado):
 
 
 def test_tratar_planilha_remove_ponto_zero_do_manifesto(df_tratado):
-    # Um dos dois registros do pedido 1002 tem manifesto gravado como
-    # número no Excel (45143) - deve virar '45143', não '45143.0'.
-    manifestos = set(df_tratado.loc[df_tratado["pedido"] == "1002", "manifesto"])
+    # Um dos dois registros do pedido 1002 tem primeiro manifesto gravado
+    # como número no Excel (45143) - deve virar '45143', não '45143.0'.
+    manifestos = set(df_tratado.loc[df_tratado["pedido"] == "1002", "primeiro_manifesto"])
     assert manifestos == {"", "45143"}
+
+
+def test_tratar_planilha_preserva_ultimo_manifesto_para_fallback(df_tratado):
+    # O registro com primeiro manifesto vazio tem o último manifesto
+    # preenchido - é o caso que o cruzamento usa como fallback. Os espaços
+    # internos são removidos por `normalizar_identificador` (ver
+    # tratar_identificadores), então 'GRU 002500-1' vira 'GRU002500-1'.
+    linha = df_tratado.loc[df_tratado["primeiro_manifesto"] == ""]
+    assert "GRU002500-1" in set(linha["ultimo_manifesto"])
 
 
 def test_tratar_planilha_preserva_zero_a_esquerda_do_pedido(df_tratado):

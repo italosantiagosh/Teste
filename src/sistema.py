@@ -69,9 +69,8 @@ def criar_driver(pasta_download: "Path | None" = None):
             "download.prompt_for_download": False,
             "download.directory_upgrade": True,
             # False é o valor correto para NÃO bloquear/perguntar no
-            # download de .xlsx/.csv (o nome do prefs é enganoso: diz
-            # respeito a deixar a checagem de segurança silenciosa, não a
-            # habilitá-la).
+            # download (o nome do prefs é enganoso: diz respeito a deixar
+            # a checagem de segurança silenciosa, não a habilitá-la).
             "safebrowsing.enabled": False,
         },
     )
@@ -86,9 +85,9 @@ def salvar_diagnostico_falha(driver, contexto: str) -> "Path | None":
     `logs/diagnostico/`, com carimbo de data/hora.
 
     Usado como último recurso quando um elemento esperado (ex.: campo de
-    data de uma tela) não aparece a tempo — em vez de o usuário precisar
-    abrir o DevTools manualmente, os arquivos gerados aqui podem ser
-    enviados diretamente para análise.
+    data, link de download) não aparece a tempo — em vez de o usuário
+    precisar abrir o DevTools manualmente, os arquivos gerados aqui podem
+    ser enviados diretamente para análise.
 
     Args:
         driver: WebDriver ativo, na tela onde a falha ocorreu.
@@ -300,143 +299,148 @@ ID_CAMPO_UNIDADE = "2"
 ID_CAMPO_OPCAO = "3"
 
 
-def navegar_para_opcao(driver, opcao: str, unidade: str | None = None, timeout: int | None = None) -> None:
-    """Navega para uma tela do sistema pelo código numérico da opção.
+def focar_janela_por_url(driver, trecho_url: str, timeout: int = 40) -> str:
+    """Troca o Selenium para a janela cuja URL contém ``trecho_url``.
 
-    Reproduz o fluxo manual: preenche 'Unidade' (ex.: 'GRU') e 'Opção'
-    (ex.: '455'), e dispara a navegação chamando diretamente a função
-    JavaScript `doOption()` do próprio sistema (em vez de simular Tab),
-    o que evita falhas de temporização entre preencher o campo e o
-    sistema reagir ao evento de mudança.
-
-    Args:
-        driver: instância do WebDriver, já logada e na tela de menu.
-        opcao: código numérico da tela de destino (ex.: '455', '023').
-        unidade: código da unidade/filial (ex.: 'GRU'). Se None, usa
-            `SISTEMA.unidade_padrao` (configurável) e, na ausência dela,
-            não mexe no campo (mantém o valor que já estiver lá).
-        timeout: segundos de espera explícita.
+    Percorre todas as janelas porque o SSW abre as opções em pop-ups e,
+    em algumas execuções, reutiliza uma janela já existente.
     """
-    timeout = timeout or SISTEMA.timeout_padrao_segundos
+    import time
 
+    from selenium.common.exceptions import NoSuchWindowException, WebDriverException
+
+    limite = time.monotonic() + timeout
+    ultima_lista: list[str] = []
+
+    while time.monotonic() < limite:
+        urls_encontradas: list[str] = []
+
+        for identificador in list(driver.window_handles):
+            try:
+                driver.switch_to.window(identificador)
+                url_atual = driver.current_url
+                urls_encontradas.append(url_atual)
+
+                if trecho_url.lower() in url_atual.lower():
+                    driver.switch_to.default_content()
+                    logger.info("Janela correta selecionada: %s", url_atual)
+                    return url_atual
+            except (NoSuchWindowException, WebDriverException):
+                continue
+
+        if urls_encontradas != ultima_lista:
+            logger.info("Janelas disponíveis durante a espera: %s", urls_encontradas)
+            ultima_lista = urls_encontradas
+
+        time.sleep(0.4)
+
+    salvar_diagnostico_falha(driver, "focar_janela_por_url")
+    raise TimeoutError(
+        f"Não encontrei uma janela cuja URL contenha '{trecho_url}' após {timeout}s. "
+        f"Últimas URLs encontradas: {ultima_lista}"
+    )
+
+
+def navegar_para_opcao(
+    driver,
+    opcao: str,
+    unidade: str | None = None,
+    timeout: int | None = None,
+) -> None:
+    """Abre uma opção do menu do SSW disparando somente uma requisição.
+
+    O SSW usa a função JavaScript ``doOption()``. Não se deve chamar essa
+    função e, em seguida, disparar também eventos input/change/keyup/blur,
+    pois cada evento pode iniciar outra requisição e gerar o alerta
+    "Já existe uma requisição em andamento".
+    """
+    import time
+
+    from selenium.common.exceptions import NoAlertPresentException, UnexpectedAlertPresentException
     from selenium.webdriver.common.by import By
     from selenium.webdriver.support import expected_conditions as EC
     from selenium.webdriver.support.ui import WebDriverWait
 
+    timeout = timeout or SISTEMA.timeout_padrao_segundos
     espera = WebDriverWait(driver, timeout)
 
     espera.until(EC.presence_of_element_located((By.ID, ID_CAMPO_OPCAO)))
 
-    janelas_antes = driver.window_handles
-
+    # Altera somente o valor do campo, sem disparar eventos input/change/blur.
+    # No menu do SSW, send_keys pode iniciar uma requisição assíncrona e fazer
+    # a opção seguinte receber o alerta "Já existe uma requisição em andamento".
     if unidade:
         campo_unidade = driver.find_element(By.ID, ID_CAMPO_UNIDADE)
-        campo_unidade.clear()
-        campo_unidade.send_keys(unidade)
+        valor_atual = (campo_unidade.get_attribute("value") or "").strip()
+        if valor_atual != unidade:
+            driver.execute_script(
+                "arguments[0].value = arguments[1];",
+                campo_unidade,
+                unidade,
+            )
+            logger.info(
+                "Unidade ajustada de '%s' para '%s' sem disparar eventos.",
+                valor_atual,
+                unidade,
+            )
 
-    # Busca o campo de novo (não reaproveita a referência de cima) — se
-    # preencher 'Unidade' disparar uma atualização parcial da página
-    # (o sistema faz isso via 'atualizaQuadroIndicadores'), a referência
-    # antiga pode ficar desatualizada.
-    campo_opcao = driver.find_element(By.ID, ID_CAMPO_OPCAO)
+    campo_opcao = espera.until(EC.element_to_be_clickable((By.ID, ID_CAMPO_OPCAO)))
     campo_opcao.clear()
     campo_opcao.send_keys(opcao)
 
     valor_lido = campo_opcao.get_attribute("value")
-    doOption_existe = driver.execute_script("return typeof doOption === 'function';")
+    do_option_existe = driver.execute_script("return typeof doOption === 'function';")
     logger.info(
-        "Diagnóstico navegação: campo Opção contém '%s' (esperado '%s') | "
-        "função doOption existe: %s",
+        "Diagnóstico navegação: campo Opção contém '%s' (esperado '%s') | função doOption existe: %s",
         valor_lido,
         opcao,
-        doOption_existe,
+        do_option_existe,
     )
 
-    # Tenta disparar a navegação, tratando o alerta "Já existe uma
-    # requisição em andamento" onde quer que ele apareça (usa o helper
-    # `executar_ignorando_alertas`, que aceita e tenta de novo).
-    script_navegacao = """
-        var el = arguments[0];
-        if (typeof doOption === 'function') { doOption(); }
-        el.dispatchEvent(new Event('input', {bubbles: true}));
-        el.dispatchEvent(new Event('change', {bubbles: true}));
-        el.dispatchEvent(new Event('keyup', {bubbles: true}));
-        el.blur();
-    """
+    if not do_option_existe:
+        raise RuntimeError("A função JavaScript doOption() não foi encontrada na tela do menu.")
 
-    def _disparar_navegacao():
-        nonlocal campo_opcao
-        driver.execute_script(script_navegacao, campo_opcao)
-
-        # Mesmo sem exceção do execute_script, o alerta pode aparecer
-        # de forma assíncrona logo em seguida.
-        from selenium.common.exceptions import (
-            NoAlertPresentException,
-            TimeoutException as _TimeoutException,
-            UnexpectedAlertPresentException,
-        )
-
+    # Guarda o estado antes da navegação. Ler current_url depois do doOption
+    # pode falhar se um alerta do SSW estiver aberto.
+    try:
+        url_anterior = driver.current_url
+    except UnexpectedAlertPresentException:
         try:
-            WebDriverWait(driver, 2).until(EC.alert_is_present())
-            texto = driver.switch_to.alert.text
-            raise UnexpectedAlertPresentException(alert_text=texto)
-        except (_TimeoutException, NoAlertPresentException):
-            pass  # nenhum alerta — deu certo
+            driver.switch_to.alert.accept()
+        except NoAlertPresentException:
+            pass
+        url_anterior = driver.current_url
 
-    def _tentar_de_novo_apos_alerta():
-        nonlocal campo_opcao
-        campo_opcao = driver.find_element(By.ID, ID_CAMPO_OPCAO)
-        campo_opcao.clear()
-        campo_opcao.send_keys(opcao)
-        _disparar_navegacao()
-
+    # UMA única chamada. Sem eventos adicionais e sem repetir a opção.
     try:
-        _disparar_navegacao()
-    except Exception as e:
-        from selenium.common.exceptions import UnexpectedAlertPresentException
+        driver.execute_script("doOption();")
+    except UnexpectedAlertPresentException:
+        # A primeira solicitação pode já ter sido aceita pelo sistema antes
+        # de o alerta surgir. Aceitamos o alerta, mas NÃO reenviamos a opção.
+        try:
+            alerta = driver.switch_to.alert
+            logger.warning("Alerta após abrir a opção %s: '%s'. Aceitando sem repetir.", opcao, alerta.text)
+            alerta.accept()
+        except NoAlertPresentException:
+            pass
 
-        if not isinstance(e, UnexpectedAlertPresentException):
-            raise
-        executar_ignorando_alertas(
-            driver, _tentar_de_novo_apos_alerta, contexto=f"navegação para '{opcao}'"
-        )
+    logger.info("Navegação para a opção '%s' disparada uma única vez.", opcao)
 
-    logger.info("Navegação solicitada para a opção '%s' (unidade: %s).", opcao, unidade or "(mantida)")
+    # Para opções conhecidas, procura diretamente a janela correta.
+    numero_opcao = str(opcao).lstrip("0")
+    telas_por_opcao = {
+        "455": "/bin/ssw0230",
+        "23": "/bin/ssw0125",
+    }
+    trecho_url = telas_por_opcao.get(numero_opcao)
+    if trecho_url:
+        focar_janela_por_url(driver, trecho_url, timeout=max(timeout, 40))
+        return
 
-    # Verifica se uma NOVA aba/janela abriu (o SSW costuma abrir cada
-    # opção em uma janela própria) e, se sim, troca o controle do
-    # Selenium para ela — senão o código continuaria "olhando" para a
-    # janela antiga do menu, mesmo com a nova já na tela.
-    trocou_de_janela = False
+    # Para outras opções, aguarda alguma mudança de URL ou de janela.
     try:
-        WebDriverWait(driver, min(timeout, 10)).until(
-            lambda d: len(d.window_handles) > len(janelas_antes)
+        WebDriverWait(driver, timeout).until(
+            lambda d: d.current_url != url_anterior or len(d.window_handles) > 1
         )
-        nova_janela = [j for j in driver.window_handles if j not in janelas_antes][0]
-        driver.switch_to.window(nova_janela)
-        trocou_de_janela = True
-        logger.info("Nova aba/janela detectada e selecionada: %s", driver.current_url)
     except Exception:
-        logger.info(
-            "Nenhuma aba/janela nova detectada — a navegação deve ter "
-            "acontecido na mesma janela."
-        )
-
-    # Se trocamos de janela, a referência antiga de `campo_opcao` pertence
-    # a outro contexto de navegação — não faz sentido checar staleness
-    # dela. Só roda essa checagem quando ficamos na mesma janela.
-    if not trocou_de_janela:
-        try:
-            WebDriverWait(driver, min(timeout, 5)).until(EC.staleness_of(campo_opcao))
-        except Exception:
-            logger.warning(
-                "Não confirmei a troca de tela para a opção '%s' pelo método "
-                "usual, mas a navegação foi enviada — seguindo em frente.",
-                opcao,
-            )
-
-    logger.info("URL após navegação para '%s': %s", opcao, driver.current_url)
-
-    import time
-
-    time.sleep(1.0)  # pequena margem para a tela terminar de carregar
+        logger.warning("Não foi possível confirmar automaticamente a abertura da opção '%s'.", opcao)

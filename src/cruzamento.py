@@ -1,123 +1,197 @@
-"""
-Etapa 5 — Cruzamento entre a planilha principal (pedidos) e a tabela de
-motoristas, usando o número do manifesto como chave.
-
-Importante: a relação é N pedidos -> 1 manifesto -> 1 motorista (vários
-pedidos costumam viajar no mesmo manifesto/carga). Por isso o merge é
-"muitos-para-um" do lado dos pedidos. Um "conflito" acontece quando a
-PRÓPRIA tabela de motoristas tem mais de um registro para o mesmo
-manifesto (ex.: reimpressão/reprocessamento) — nesse caso, não é
-escolhido automaticamente qual motorista vale; o registro fica separado
-para conferência humana.
-"""
+"""Cruzamento da planilha de entregas com a tabela de manifestos/motoristas."""
 
 from __future__ import annotations
 
 import logging
+import re
 
 import pandas as pd
-
-from config import COLUNAS
-from src.utils import normalizar_identificador
 
 logger = logging.getLogger("automacao_transportadora")
 
 
-def _normalizar_coluna_chave(serie: pd.Series) -> pd.Series:
-    return serie.apply(normalizar_identificador)
+def normalizar_manifesto(valor: object) -> str:
+    """Normaliza manifesto sem perder zeros ou dígito verificador.
+
+    Exemplos equivalentes:
+      ``GRU 002423-6`` -> ``GRU0024236``
+      ``GRU0024236``   -> ``GRU0024236``
+    """
+    if valor is None or pd.isna(valor):
+        return ""
+    texto = str(valor).strip().upper()
+    if not texto or texto == "NAN":
+        return ""
+    texto = re.sub(r"\.0$", "", texto)
+    return re.sub(r"[^A-Z0-9]", "", texto)
+
+
+def _preparar_mapa_motoristas(
+    df_motoristas: pd.DataFrame,
+    coluna_chave: str,
+) -> tuple[pd.DataFrame, set[str], pd.DataFrame]:
+    """Prepara registros únicos e separa manifestos ambíguos."""
+    motoristas = df_motoristas.copy()
+    motoristas["_manifesto_normalizado"] = motoristas[coluna_chave].map(normalizar_manifesto)
+    motoristas = motoristas[motoristas["_manifesto_normalizado"] != ""].copy()
+
+    # Um mesmo manifesto repetido com dados idênticos não é conflito real.
+    colunas_identidade = [
+        c for c in ["_manifesto_normalizado", "motorista", "cavalo", "carreta"]
+        if c in motoristas.columns
+    ]
+    motoristas = motoristas.drop_duplicates(subset=colunas_identidade)
+
+    qtd_motoristas = motoristas.groupby("_manifesto_normalizado")["motorista"].nunique(dropna=False)
+    chaves_conflito = set(qtd_motoristas[qtd_motoristas > 1].index)
+
+    conflitos = motoristas[
+        motoristas["_manifesto_normalizado"].isin(chaves_conflito)
+    ].drop(columns=["_manifesto_normalizado"], errors="ignore")
+
+    validos = motoristas[
+        ~motoristas["_manifesto_normalizado"].isin(chaves_conflito)
+    ].drop_duplicates(subset=["_manifesto_normalizado"], keep="first")
+
+    return validos, chaves_conflito, conflitos
 
 
 def cruzar_pedidos_motoristas(
     df_pedidos: pd.DataFrame,
     df_motoristas: pd.DataFrame,
-    coluna_chave_pedidos: str | None = None,
+    coluna_primeiro_manifesto: str = "primeiro_manifesto",
+    coluna_ultimo_manifesto: str = "ultimo_manifesto",
     coluna_chave_motoristas: str = "manifesto",
 ) -> dict[str, pd.DataFrame]:
-    """Cruza pedidos com motoristas pela chave configurada.
+    """Associa motorista tentando o primeiro e depois o último manifesto.
 
-    Args:
-        df_pedidos: DataFrame de pedidos já tratado (Etapa 3), contendo a
-            coluna `coluna_chave_pedidos` com a chave de cruzamento.
-        df_motoristas: DataFrame capturado da tela de motoristas (Etapa 4),
-            contendo a coluna `coluna_chave_motoristas` com o número do
-            manifesto e as colunas de motorista/placa/status.
-        coluna_chave_pedidos: nome da coluna-chave no DataFrame de pedidos.
-            Se não informado, usa `config.COLUNAS.col_chave_cruzamento`
-            (configurável em `config/colunas.json` — pedido, nota fiscal,
-            número da carga, CT-e etc.).
-        coluna_chave_motoristas: nome da coluna-chave no DataFrame de
-            motoristas.
+    A tela 023 consultada em GRU normalmente corresponde ao primeiro manifesto.
+    Por isso ele é a chave principal. O último manifesto funciona como fallback
+    para cargas em que o primeiro esteja vazio ou não seja encontrado.
 
-    Returns:
-        Dicionário com as chaves:
-          - 'com_motorista': pedidos com motorista associado com sucesso;
-          - 'sem_motorista': pedidos cujo manifesto não foi encontrado na
-            tabela de motoristas (ou cujo manifesto está em conflito);
-          - 'motoristas_sem_pedido': registros de motoristas cujo manifesto
-            não aparece em nenhum pedido;
-          - 'conflitos': registros da tabela de motoristas onde o mesmo
-            manifesto aparece mais de uma vez (não resolvido automaticamente).
+    São incluídas as colunas de auditoria:
+      - ``manifesto_usado_motorista``
+      - ``origem_vinculo_motorista`` (PRIMEIRO MANIFESTO / ÚLTIMO MANIFESTO)
     """
-    coluna_chave_pedidos = coluna_chave_pedidos or COLUNAS.col_chave_cruzamento
+    for coluna in (coluna_primeiro_manifesto, coluna_ultimo_manifesto):
+        if coluna not in df_pedidos.columns:
+            raise ValueError(
+                f"A planilha tratada não contém a coluna '{coluna}'. "
+                f"Colunas existentes: {list(df_pedidos.columns)}"
+            )
+    if coluna_chave_motoristas not in df_motoristas.columns:
+        raise ValueError(
+            f"A tabela de motoristas não contém a coluna '{coluna_chave_motoristas}'."
+        )
+    if "motorista" not in df_motoristas.columns:
+        raise ValueError("A tabela capturada não contém a coluna 'motorista'.")
 
     pedidos = df_pedidos.copy()
-    motoristas = df_motoristas.copy()
-
-    pedidos["_chave"] = _normalizar_coluna_chave(pedidos[coluna_chave_pedidos])
-    motoristas["_chave"] = _normalizar_coluna_chave(motoristas[coluna_chave_motoristas])
-
-    # 1) Identifica conflitos: manifesto duplicado na PRÓPRIA tabela de motoristas
-    contagem_chave = motoristas["_chave"].value_counts()
-    chaves_em_conflito = set(contagem_chave[contagem_chave > 1].index) - {""}
-
-    conflitos = motoristas[motoristas["_chave"].isin(chaves_em_conflito)].drop(columns=["_chave"])
-    motoristas_validos = motoristas[~motoristas["_chave"].isin(chaves_em_conflito)]
-
-    if chaves_em_conflito:
-        logger.warning(
-            "Manifestos com mais de um registro de motorista (conflito, "
-            "não resolvido automaticamente): %s",
-            sorted(chaves_em_conflito),
-        )
-
-    # 2) Merge muitos-para-um: pedidos -> motoristas válidos (sem conflito)
-    resultado = pedidos.merge(
-        motoristas_validos,
-        on="_chave",
-        how="left",
-        suffixes=("", "_motorista"),
-        indicator=True,
+    validos, chaves_conflito, conflitos = _preparar_mapa_motoristas(
+        df_motoristas, coluna_chave_motoristas
     )
 
-    # Pedidos cujo manifesto caiu em conflito também vão para "sem_motorista",
-    # marcados explicitamente, para não ficarem escondidos entre os sem match.
-    pedidos_em_conflito_mask = resultado["_chave"].isin(chaves_em_conflito)
+    pedidos["_primeiro_norm"] = pedidos[coluna_primeiro_manifesto].map(normalizar_manifesto)
+    pedidos["_ultimo_norm"] = pedidos[coluna_ultimo_manifesto].map(normalizar_manifesto)
 
-    com_motorista = resultado[
-        (resultado["_merge"] == "both") & (~pedidos_em_conflito_mask)
-    ].drop(columns=["_chave", "_merge"])
+    colunas_dados = [
+        c for c in [
+            "motorista", "cavalo", "carreta", "origem", "destino", "unid",
+            "saida", "prev_chegada", "chegada", "situacao_mdfe"
+        ] if c in validos.columns
+    ]
+    mapa = validos.set_index("_manifesto_normalizado")[colunas_dados].to_dict("index")
 
-    sem_motorista = resultado[
-        (resultado["_merge"] == "left_only") | pedidos_em_conflito_mask
-    ].drop(columns=["_chave", "_merge"])
+    def escolher_manifesto(linha: pd.Series) -> tuple[str, str, str]:
+        primeiro = linha["_primeiro_norm"]
+        ultimo = linha["_ultimo_norm"]
 
-    # 3) Motoristas (válidos) cujo manifesto não aparece em nenhum pedido
-    chaves_pedidos = set(pedidos["_chave"]) - {""}
-    motoristas_sem_pedido = motoristas_validos[
-        ~motoristas_validos["_chave"].isin(chaves_pedidos)
-    ].drop(columns=["_chave"])
+        if primeiro in chaves_conflito:
+            return primeiro, "PRIMEIRO MANIFESTO", "CONFLITO DE MANIFESTO"
+        if primeiro and primeiro in mapa:
+            return primeiro, "PRIMEIRO MANIFESTO", "ENCONTRADO"
+
+        if ultimo in chaves_conflito:
+            return ultimo, "ÚLTIMO MANIFESTO", "CONFLITO DE MANIFESTO"
+        if ultimo and ultimo in mapa:
+            return ultimo, "ÚLTIMO MANIFESTO", "ENCONTRADO"
+
+        if not primeiro and not ultimo:
+            return "", "", "SEM MANIFESTO"
+        return primeiro or ultimo, "", "NÃO ENCONTRADO"
+
+    escolhas = pedidos.apply(escolher_manifesto, axis=1, result_type="expand")
+    escolhas.columns = ["_manifesto_escolhido", "origem_vinculo_motorista", "_status_vinculo"]
+    pedidos = pd.concat([pedidos, escolhas], axis=1)
+
+    pedidos["manifesto_usado_motorista"] = ""
+    usa_primeiro = pedidos["origem_vinculo_motorista"].eq("PRIMEIRO MANIFESTO")
+    usa_ultimo = pedidos["origem_vinculo_motorista"].eq("ÚLTIMO MANIFESTO")
+    pedidos.loc[usa_primeiro, "manifesto_usado_motorista"] = pedidos.loc[
+        usa_primeiro, coluna_primeiro_manifesto
+    ].fillna("")
+    pedidos.loc[usa_ultimo, "manifesto_usado_motorista"] = pedidos.loc[
+        usa_ultimo, coluna_ultimo_manifesto
+    ].fillna("")
+
+    # Remove eventual coluna antiga e popula os dados capturados.
+    pedidos = pedidos.drop(columns=colunas_dados, errors="ignore")
+    for coluna in colunas_dados:
+        pedidos[coluna] = pedidos["_manifesto_escolhido"].map(
+            lambda chave, c=coluna: mapa.get(chave, {}).get(c) if chave in mapa else None
+        )
+
+    pedidos["motorista"] = pedidos.get("motorista", pd.Series(index=pedidos.index, dtype="object"))
+    pedidos.loc[pedidos["_status_vinculo"] != "ENCONTRADO", "motorista"] = pedidos.loc[
+        pedidos["_status_vinculo"] != "ENCONTRADO", "_status_vinculo"
+    ]
+
+    encontrado = pedidos["_status_vinculo"].eq("ENCONTRADO")
+    com_motorista = pedidos[encontrado].copy()
+    sem_motorista = pedidos[~encontrado].copy()
+
+    chaves_usadas = set(pedidos.loc[encontrado, "_manifesto_escolhido"])
+    motoristas_sem_pedido = validos[
+        ~validos["_manifesto_normalizado"].isin(chaves_usadas)
+    ].drop(columns=["_manifesto_normalizado"], errors="ignore")
+
+    colunas_auxiliares = ["_primeiro_norm", "_ultimo_norm", "_manifesto_escolhido", "_status_vinculo"]
+    for frame in (pedidos, com_motorista, sem_motorista):
+        frame.drop(columns=colunas_auxiliares, inplace=True, errors="ignore")
+
+    # Posiciona as colunas de auditoria e motorista perto dos manifestos.
+    ordem_preferida = [
+        "pedido", "cliente", "cidade", "data_emissao",
+        coluna_primeiro_manifesto, coluna_ultimo_manifesto,
+        "manifesto_usado_motorista", "origem_vinculo_motorista",
+        "motorista", "placa_cavalo", "status", "previsao_entrega",
+    ]
+    for nome, frame in (("pedidos", pedidos), ("com", com_motorista), ("sem", sem_motorista)):
+        presentes = [c for c in ordem_preferida if c in frame.columns]
+        extras = [c for c in frame.columns if c not in presentes]
+        reorganizado = frame[presentes + extras]
+        if nome == "pedidos":
+            pedidos = reorganizado
+        elif nome == "com":
+            com_motorista = reorganizado
+        else:
+            sem_motorista = reorganizado
 
     logger.info(
-        "Cruzamento concluído | pedidos com motorista: %d | pedidos sem "
-        "motorista/conflito: %d | motoristas sem pedido correspondente: %d | "
-        "manifestos em conflito: %d",
+        "Cruzamento concluído | pedidos totais: %d | com motorista: %d | "
+        "sem correspondência/conflito: %d | pelo primeiro manifesto: %d | "
+        "pelo último manifesto: %d | motoristas sem pedido: %d | conflitos: %d",
+        len(pedidos),
         len(com_motorista),
         len(sem_motorista),
+        int((com_motorista["origem_vinculo_motorista"] == "PRIMEIRO MANIFESTO").sum()),
+        int((com_motorista["origem_vinculo_motorista"] == "ÚLTIMO MANIFESTO").sum()),
         len(motoristas_sem_pedido),
-        len(chaves_em_conflito),
+        len(conflitos),
     )
 
     return {
+        "relatorio_completo": pedidos,
         "com_motorista": com_motorista,
         "sem_motorista": sem_motorista,
         "motoristas_sem_pedido": motoristas_sem_pedido,

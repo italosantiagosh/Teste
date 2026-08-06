@@ -10,13 +10,15 @@ estaria validando o pipeline de verdade.
 Casos incluídos de propósito:
   - coluna a excluir (`Numero da Nota Fiscal`, `Peso Real em Kg`, `Vendedor`);
   - coluna extra não mapeada (mantida ao final, sem perda de dado);
-  - pedido e manifesto vindos como NÚMERO do Excel (viram '.0' na leitura
-    bruta — deve ser removido pelo tratamento);
+  - pedido e manifesto (primeiro e último) vindos como NÚMERO do Excel
+    (viram '.0' na leitura bruta — deve ser removido pelo tratamento);
   - pedido duplicado, incluindo um duplicado só igual DEPOIS da
     normalização (um vem com '.0', o outro como texto puro);
   - pedido com zeros à esquerda (não pode virar número);
   - cliente com acentuação e espaços extras nas pontas;
-  - pedido sem manifesto (ainda não embarcado);
+  - pedido sem primeiro manifesto, mas com último manifesto preenchido
+    (caso de fallback no cruzamento);
+  - pedido sem manifesto nenhum (ainda não embarcado);
   - data de emissão em formatos diferentes (BR e ISO) e uma data inválida;
   - linha completamente vazia (deve ser removida sem avisar errado).
 
@@ -43,6 +45,7 @@ def gerar() -> Path:
             "Cidade de Entrega": "Natal",
             "Data de Emissao": "01/08/2026",
             "Primeiro Manifesto": "GRU 002415-5",
+            "Ultimo Manifesto": "",
             "Placa do Cavalo": "NVU5D88",
             "Descricao da Ultima Ocorrencia": "Em transito",
             "Numero da Nota Fiscal": "55501",
@@ -55,7 +58,8 @@ def gerar() -> Path:
             "Cliente Destinatario": "Comércio São José Ltda",  # com acento
             "Cidade de Entrega": "Mossoro",
             "Data de Emissao": "2026-08-01",
-            "Primeiro Manifesto": "",  # ainda não embarcado
+            "Primeiro Manifesto": "",  # vazio - usa o último manifesto (fallback)
+            "Ultimo Manifesto": "GRU 002500-1",
             "Placa do Cavalo": "",
             "Descricao da Ultima Ocorrencia": "Pendente",
             "Numero da Nota Fiscal": "55502",
@@ -69,6 +73,7 @@ def gerar() -> Path:
             "Cidade de Entrega": "Mossoro",
             "Data de Emissao": "2026-08-01",
             "Primeiro Manifesto": 45143,  # número puro -> '45143.0' na leitura
+            "Ultimo Manifesto": "",
             "Placa do Cavalo": "QGR9F84",
             "Descricao da Ultima Ocorrencia": "Coletado",
             "Numero da Nota Fiscal": "55502",
@@ -82,6 +87,7 @@ def gerar() -> Path:
             "Cidade de Entrega": "Fortaleza",
             "Data de Emissao": "31/13/2026",  # data inválida (mês 13)
             "Primeiro Manifesto": "GRU 002393-1",
+            "Ultimo Manifesto": "",
             "Placa do Cavalo": "OWB1D50",
             "Descricao da Ultima Ocorrencia": "Pendente",
             "Numero da Nota Fiscal": "55503",
@@ -95,6 +101,7 @@ def gerar() -> Path:
             "Cidade de Entrega": "Recife",
             "Data de Emissao": "05/08/2026",
             "Primeiro Manifesto": "GRU 009999-9",
+            "Ultimo Manifesto": "",
             "Placa do Cavalo": "AQL2D03",
             "Descricao da Ultima Ocorrencia": "Em transito",
             "Numero da Nota Fiscal": "55504",
@@ -105,9 +112,10 @@ def gerar() -> Path:
         # Linha completamente vazia (deve ser removida)
         {k: None for k in [
             "CTRC", "Cliente Destinatario", "Cidade de Entrega",
-            "Data de Emissao", "Primeiro Manifesto", "Placa do Cavalo",
-            "Descricao da Ultima Ocorrencia", "Numero da Nota Fiscal",
-            "Peso Real em Kg", "Vendedor", "Observacao Extra",
+            "Data de Emissao", "Primeiro Manifesto", "Ultimo Manifesto",
+            "Placa do Cavalo", "Descricao da Ultima Ocorrencia",
+            "Numero da Nota Fiscal", "Peso Real em Kg", "Vendedor",
+            "Observacao Extra",
         ]},
     ]
 

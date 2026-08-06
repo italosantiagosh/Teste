@@ -1,36 +1,41 @@
-"""
-Etapa 9 — Preparação e envio da mensagem de texto pelo WhatsApp Web.
-
-Sem anexo de imagem — apenas texto (ver `mensagem.py`).
-
-AINDA NÃO IMPLEMENTADO. Preciso confirmar:
-  - abrir a conversa via URL (https://wa.me/<numero>) e Selenium, ou via
-    busca dentro do WhatsApp Web?
-  - o envio deve aguardar a página carregar completamente antes de digitar?
-
-Requisitos de segurança já definidos:
-  - nunca enviar automaticamente sem confirmação explícita no terminal;
-  - mostrar prévia da mensagem antes de perguntar;
-  - se o número não estiver cadastrado em config/clientes.json, avisar e
-    não tentar enviar;
-  - logar cliente, horário e status do envio — nunca logar senha/token.
-"""
-
+"""Preparação semiautomática de mensagens no WhatsApp Web."""
 from __future__ import annotations
 
 import logging
+import re
+from urllib.parse import quote
+import webbrowser
 
 logger = logging.getLogger("automacao_transportadora")
 
 
+def normalizar_telefone(numero: str, ddi_padrao: str = "55") -> str:
+    digitos = re.sub(r"\D", "", str(numero))
+    if not digitos:
+        raise ValueError("Telefone vazio.")
+    if len(digitos) in {10, 11}:
+        digitos = ddi_padrao + digitos
+    if not (12 <= len(digitos) <= 13):
+        raise ValueError("Telefone inválido. Informe DDI, DDD e número.")
+    return digitos
+
+
+def abrir_conversa(numero_whatsapp: str, texto_mensagem: str) -> bool:
+    numero = normalizar_telefone(numero_whatsapp)
+    url = f"https://web.whatsapp.com/send?phone={numero}&text={quote(texto_mensagem)}"
+    aberto = webbrowser.open(url, new=2)
+    logger.info("Conversa preparada no WhatsApp Web para telefone final %s.", numero[-4:])
+    return bool(aberto)
+
+
 def preparar_e_enviar_mensagem(numero_whatsapp: str, texto_mensagem: str) -> bool:
-    """Abre a conversa do cliente, preenche a mensagem, mostra prévia no
-    terminal e só envia mediante confirmação explícita do usuário.
-
-    Returns:
-        True se a mensagem foi enviada, False se o usuário cancelou.
-
-    Placeholder — implementação real depende de decisão sobre abertura
-    da conversa (wa.me vs. busca) e de testes no ambiente do usuário.
-    """
-    raise NotImplementedError("Etapa 9 será desenvolvida por último, após Etapa 8.")
+    print("\nPRÉVIA DA MENSAGEM\n" + "=" * 60)
+    print(texto_mensagem)
+    print("=" * 60)
+    confirmar = input("Abrir esta mensagem no WhatsApp Web? (s/n): ").strip().lower()
+    if confirmar != "s":
+        print("Operação cancelada.")
+        return False
+    abrir_conversa(numero_whatsapp, texto_mensagem)
+    print("Conversa aberta com o texto preenchido. Confira e envie manualmente.")
+    return True
