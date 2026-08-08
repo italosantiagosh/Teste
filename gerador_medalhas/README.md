@@ -35,7 +35,7 @@ automaticamente.
 Outras opções (`python gerar_medalhas.py --help`):
 
 - `python gerar_medalhas.py caminho/outro_pedido.xlsx` — usa outro arquivo de pedido.
-- `--dpi 1200` — resolução de saída (padrão: 600, já bem acima do que qualquer impressora de adesivo usa).
+- `--dpi 2400` — resolução de saída (padrão: 1200, priorizando a melhor qualidade possível — o programa não se preocupa em manter o arquivo pequeno; folhas de 20-30MB são esperadas e não são um problema).
 - `--pdf` — também salva cada folha em PDF, além do PNG (veja a pergunta 1 abaixo).
 - `--sem-confirmar` — não pergunta nada; nomes que não baterem exatamente viram erro na lista, em vez de sugestão interativa. Útil pra rodar sem alguém acompanhando o terminal.
 - `--nao-abrir` — não abre os arquivos automaticamente ao final.
@@ -55,12 +55,16 @@ importação do PNG vier com o tamanho errado, o PDF é uma alternativa mais
 confiável para o mesmo posicionamento.
 
 **2) Melhor qualidade possível nas imagens**
-- Antialiasing por *supersampling*: cada medalha é processada em 4x o
+Tamanho do arquivo não é um critério aqui — o programa prioriza qualidade
+mesmo que isso signifique folhas de 20-30MB (ou mais) e um processamento
+mais demorado:
+- DPI padrão de 1200 (configurável, pode subir com `--dpi 2400` etc.).
+- Antialiasing por *supersampling*: cada medalha é processada em 8x o
   tamanho final antes de aplicar a máscara circular e reduzir com Lanczos —
   a borda do círculo fica lisa, sem serrilhado (o mesmo truque que estava
-  sendo testado em `montar_folha copy.py`, agora ativo por padrão).
+  sendo testado em `montar_folha copy.py`, ampliado e ativo por padrão).
 - Nitidez leve (`UnsharpMask`) depois da redução, pra compensar a suavização natural do redimensionamento.
-- DPI configurável, com um padrão de 600 (bem acima do necessário pra impressão de adesivo, sem gerar arquivos gigantes desnecessariamente — pode subir pra 1200 com `--dpi 1200` se quiser testar).
+- O único corte que o programa faz é "de graça": salvar a folha sem canal de transparência (a folha final é sempre 100% opaca, então isso não muda um pixel visível) e com compressão PNG sem perda — não é uma troca de qualidade por espaço, é só não desperdiçar espaço à toa. Veja a seção de avisos de resolução abaixo pra saber quando vale a pena subir o DPI de verdade.
 
 **3) Gerar automaticamente mais de uma folha**
 O programa soma a quantidade pedida de cada tamanho e divide pela
@@ -110,22 +114,25 @@ sobrenome que não está cadastrado. Duas mudanças:
    nome de novo** ali mesmo, na hora, em vez de só listar como erro no
    final. Só vira erro se você deixar em branco (desistir da linha) ou digitar 5 vezes sem achar.
 
-**Tamanho do arquivo (6MB novo x 20-30MB antigo) — é a melhor qualidade?**
-Sim, e o motivo do tamanho menor é bom: o programa novo salva a folha final
-sem o canal de transparência (alfa), que sobrava sem necessidade — a folha
-sempre fica 100% opaca (todo espaço da grade é sempre preenchido, com
-pedido real ou com o santo de preenchimento), então guardar transparência
-ali era só peso morto no arquivo. Isso, mais compressão PNG no nível máximo
-(sem perda — é o mesmo algoritmo, só com mais esforço de compactação),
-reduziu uns 15-20% sozinho, e ainda cai mais dependendo do quanto suas
-artes têm áreas lisas/repetidas.
+**Prioridade é qualidade, não tamanho do arquivo**
+Ajustado: tamanho de arquivo não é levado em conta em nenhuma decisão do
+programa — DPI padrão voltou a 1200 e o antialiasing ficou mais pesado (8x
+supersampling, em vez de 4x), então é esperado (e não é problema) folhas de
+20-30MB pra cima, e o processamento de cada folha ficar mais lento
+(dezenas de segundos, dependendo de quantos santos diferentes tem no
+pedido — cada imagem única só é processada uma vez e fica em cache, então
+o tempo cresce com a quantidade de **santos diferentes**, não com a
+quantidade total de medalhas). O único corte que continua sendo feito é
+descartar o canal de transparência ao salvar — isso não muda um único
+pixel visível (a folha final é sempre 100% opaca), então não é uma troca
+de qualidade por espaço, é só não gravar dado que não serve pra nada.
 
-Sobre aumentar o DPI: **só ajuda até o ponto em que a imagem de origem tem
-resolução de verdade** — depois disso o programa está só esticando pixels
-por interpolação, sem nenhum detalhe novo, e o arquivo incha à toa (dobrar
-o DPI multiplica os pixels por 4). Por isso agora, ao final de cada
-tamanho, o programa avisa quando alguma arte de origem é pequena demais
-para o DPI pedido:
+Uma ressalva que continua valendo mesmo priorizando qualidade: **o DPI só
+ajuda até o ponto em que a imagem de origem tem resolução de verdade** —
+depois disso o programa está esticando pixels por interpolação, sem
+nenhum detalhe novo (só arquivo maior e mais demora à toa). Por isso, ao
+final de cada tamanho, o programa avisa quando alguma arte de origem é
+pequena demais para o DPI pedido:
 
 ```
 Aviso: 2 imagem(ns) de origem estão em resolução baixa demais para 1200 DPI

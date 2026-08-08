@@ -9,7 +9,8 @@ from normalizacao import normalizar_nome
 # Quantas vezes maior que o tamanho final a imagem é processada antes de
 # reduzir. Suaviza a borda do círculo (evita serrilhado) — o mesmo truque
 # testado em "montar_folha copy.py", só que como opção reaproveitável.
-FATOR_SUPERAMOSTRAGEM = 4
+# Prioriza qualidade máxima da borda sobre tempo de processamento/memória.
+FATOR_SUPERAMOSTRAGEM = 8
 
 
 class ImagemNaoEncontrada(FileNotFoundError):

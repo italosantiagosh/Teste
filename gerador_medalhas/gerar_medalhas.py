@@ -2,7 +2,7 @@
 tamanhos presentes na tabela e abre os arquivos gerados.
 
 Uso:
-    python gerar_medalhas.py [caminho_do_pedido] [--dpi 600] [--pdf] [--sem-confirmar]
+    python gerar_medalhas.py [caminho_do_pedido] [--dpi 1200] [--pdf] [--sem-confirmar]
 
 Se caminho_do_pedido não for informado, usa pedidos/pedido.csv.
 """
@@ -26,9 +26,8 @@ PASTA_BASE = Path(__file__).resolve().parent
 PASTA_IMAGENS_PADRAO = PASTA_BASE / "imagens"
 PASTA_SAIDA_PADRAO = PASTA_BASE / "saida"
 PASTA_PEDIDOS_PADRAO = PASTA_BASE / "pedidos"
-CAMINHO_NOMES_EXIBICAO_PADRAO = PASTA_BASE / "config" / "nomes_exibicao.json"
 
-DPI_PADRAO = 600
+DPI_PADRAO = 1200  # prioriza a melhor qualidade possível; tamanho do arquivo não é preocupação
 
 
 def perguntar_confirmacao_terminal(mensagem: str) -> bool:
@@ -59,19 +58,38 @@ def montar_argumentos():
     parser.add_argument("pedido", nargs="?", default=None, help="Caminho do CSV/XLSX com o pedido (padrão: pedidos/pedido.csv)")
     parser.add_argument("--imagens", default=None, help="Pasta com as imagens dos santos (padrão: imagens/)")
     parser.add_argument("--saida", default=None, help="Pasta onde salvar as folhas geradas (padrão: saida/)")
-    parser.add_argument("--dpi", type=int, default=DPI_PADRAO, help=f"Resolução de saída em DPI (padrão: {DPI_PADRAO})")
+    parser.add_argument(
+        "--nomes-exibicao",
+        default=None,
+        help="Arquivo JSON com a grafia bonita dos santos (padrão: config/nomes_exibicao.json ao lado da pasta de imagens usada)",
+    )
+    parser.add_argument("--dpi", type=int, default=DPI_PADRAO, help=f"Resolução de saída em DPI (padrão: {DPI_PADRAO}, priorizando qualidade sobre tamanho do arquivo)")
     parser.add_argument("--pdf", action="store_true", help="Também salva cada folha como PDF (tamanho físico sem ambiguidade de DPI ao importar)")
     parser.add_argument("--sem-confirmar", action="store_true", help="Não pergunta nada; nomes não encontrados exatamente viram erro")
     parser.add_argument("--nao-abrir", action="store_true", help="Não abre as folhas geradas automaticamente ao final")
     return parser.parse_args()
 
 
-def main():
-    argumentos = montar_argumentos()
+def resolver_caminhos(argumentos):
+    """Resolve os caminhos de entrada/saída a partir dos argumentos da CLI.
 
+    O catálogo de nomes bonitos, por padrão, fica ao lado da pasta de
+    imagens usada — assim, gerar folhas com --imagens apontando pra outro
+    lugar (testes, um pedido avulso) nunca mistura nomes com o catálogo
+    "de verdade" do projeto.
+    """
     caminho_pedido = Path(argumentos.pedido) if argumentos.pedido else PASTA_PEDIDOS_PADRAO / "pedido.csv"
     pasta_imagens = Path(argumentos.imagens) if argumentos.imagens else PASTA_IMAGENS_PADRAO
     pasta_saida = Path(argumentos.saida) if argumentos.saida else PASTA_SAIDA_PADRAO
+    caminho_nomes_exibicao = (
+        Path(argumentos.nomes_exibicao) if argumentos.nomes_exibicao else pasta_imagens.parent / "config" / "nomes_exibicao.json"
+    )
+    return caminho_pedido, pasta_imagens, pasta_saida, caminho_nomes_exibicao
+
+
+def main():
+    argumentos = montar_argumentos()
+    caminho_pedido, pasta_imagens, pasta_saida, caminho_nomes_exibicao = resolver_caminhos(argumentos)
 
     try:
         tabela = ler_tabela_pedido(caminho_pedido)
@@ -79,7 +97,7 @@ def main():
         print(f"Erro: {erro}")
         sys.exit(1)
 
-    catalogo = Catalogo(pasta_imagens, CAMINHO_NOMES_EXIBICAO_PADRAO)
+    catalogo = Catalogo(pasta_imagens, caminho_nomes_exibicao)
     if not catalogo.chaves_santos():
         print(f"Nenhuma imagem encontrada em {pasta_imagens}. Confira o padrão de nome: santo_modelo_1.png")
         sys.exit(1)
