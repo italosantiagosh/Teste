@@ -6,7 +6,11 @@ import pandas as pd
 
 from catalogo import Catalogo
 from config_folhas import CONFIGS_TAMANHO, normalizar_chave_tamanho
-from normalizacao import normalizar_nome, sugerir_correspondencia
+from normalizacao import normalizar_nome, sugerir_correspondencia, sugerir_por_prefixo
+
+# Depois de tantas tentativas de digitar de novo sem achar nada, desiste e
+# vira erro — evita loop infinito se alguém automatizar a resposta errado.
+MAXIMO_TENTATIVAS_DIGITACAO = 5
 
 COLUNAS_OBRIGATORIAS = ["santo", "modelo", "tamanho", "quantidade"]
 
@@ -49,12 +53,15 @@ def _ler_csv_com_fallback_de_codificacao(caminho: Path) -> pd.DataFrame:
     )
 
 
-def resolver_pedido(tabela: pd.DataFrame, catalogo: Catalogo, perguntar_confirmacao=None):
+def resolver_pedido(tabela: pd.DataFrame, catalogo: Catalogo, perguntar_confirmacao=None, pedir_texto=None):
     """Valida cada linha da tabela, tentando corrigir nomes de santo parecidos.
 
-    perguntar_confirmacao(mensagem) -> bool. Se None, nenhuma correção
-    automática é aceita (linhas ambíguas viram erro) — útil para rodar sem
-    interação (testes, automação).
+    perguntar_confirmacao(mensagem) -> bool: confirma uma sugestão automática.
+    pedir_texto(mensagem) -> str: usado quando não há sugestão (ou ela foi
+      recusada), para o usuário digitar o nome correto na hora. Uma resposta
+      vazia desiste da linha.
+    Se ambos forem None, nenhuma correção acontece — linhas ambíguas viram
+    erro direto (útil para rodar sem interação: testes, automação).
 
     Devolve (itens_resolvidos, erros):
       itens_resolvidos: lista de dicts {chave_santo, modelo, chave_tamanho, quantidade}
@@ -97,6 +104,7 @@ def resolver_pedido(tabela: pd.DataFrame, catalogo: Catalogo, perguntar_confirma
             chave_santo_digitada,
             catalogo,
             perguntar_confirmacao,
+            pedir_texto,
             cache_correcoes,
         )
         if chave_santo_resolvida is None:
@@ -125,7 +133,7 @@ def resolver_pedido(tabela: pd.DataFrame, catalogo: Catalogo, perguntar_confirma
 
 
 def _resolver_nome_santo(
-    santo_digitado, chave_digitada, catalogo: Catalogo, perguntar_confirmacao, cache_correcoes
+    santo_digitado, chave_digitada, catalogo: Catalogo, perguntar_confirmacao, pedir_texto, cache_correcoes
 ):
     if catalogo.existe_santo(chave_digitada):
         catalogo.registrar_nome_novo_se_ausente(chave_digitada, santo_digitado)
@@ -134,19 +142,49 @@ def _resolver_nome_santo(
     if chave_digitada in cache_correcoes:
         return cache_correcoes[chave_digitada]
 
-    sugestao = sugerir_correspondencia(chave_digitada, catalogo.chaves_santos())
-    resultado = None
-    if sugestao is not None:
-        nome_sugerido = catalogo.nome_bonito(sugestao)
-        if perguntar_confirmacao is not None:
-            aceitou = perguntar_confirmacao(
-                f"'{santo_digitado}' não encontrado. Você quis dizer '{nome_sugerido}'?"
-            )
-            if aceitou:
-                resultado = sugestao
-
+    resultado = _tentar_resolver_interativamente(
+        santo_digitado, chave_digitada, catalogo, perguntar_confirmacao, pedir_texto
+    )
     cache_correcoes[chave_digitada] = resultado
     return resultado
+
+
+def _sugerir(chave_digitada, catalogo: Catalogo):
+    """Tenta primeiro achar um santo cadastrado que seja um "prefixo" do que
+    foi digitado (ex.: 'guido_schaffer' -> 'guido': mesmo santo, sobrenome a
+    mais que não está no catálogo). Só se isso falhar, cai pra semelhança
+    geral de texto (cobre erro de digitação tipo 'sao_juse' -> 'sao_jose')."""
+    chaves = catalogo.chaves_santos()
+    return sugerir_por_prefixo(chave_digitada, chaves) or sugerir_correspondencia(chave_digitada, chaves)
+
+
+def _tentar_resolver_interativamente(santo_digitado, chave_digitada, catalogo: Catalogo, perguntar_confirmacao, pedir_texto):
+    texto_atual = santo_digitado
+    chave_atual = chave_digitada
+
+    for _ in range(MAXIMO_TENTATIVAS_DIGITACAO):
+        if catalogo.existe_santo(chave_atual):
+            return chave_atual
+
+        sugestao = _sugerir(chave_atual, catalogo)
+        if sugestao is not None and perguntar_confirmacao is not None:
+            nome_sugerido = catalogo.nome_bonito(sugestao)
+            if perguntar_confirmacao(f"'{texto_atual}' não encontrado. Você quis dizer '{nome_sugerido}'?"):
+                return sugestao
+
+        if pedir_texto is None:
+            return None
+
+        novo_texto = pedir_texto(
+            f"Não encontrei '{texto_atual}' em imagens/. Digite o nome correto "
+            "(ou deixe em branco para pular esta linha):"
+        )
+        if not novo_texto or not novo_texto.strip():
+            return None
+        texto_atual = novo_texto.strip()
+        chave_atual = normalizar_nome(texto_atual)
+
+    return None
 
 
 def expandir_por_tamanho(itens_resolvidos):

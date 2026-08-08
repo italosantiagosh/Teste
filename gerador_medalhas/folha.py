@@ -71,7 +71,10 @@ def montar_imagem_folha(pagina_medalhas, config: ConfigTamanho, cache: CacheMeda
 def gerar_folhas(medalhas, config: ConfigTamanho, pasta_imagens: Path, dpi: int, chave_santo_preenchimento, modelo_preenchimento):
     """Gera todas as folhas necessárias para um tamanho de medalha.
 
-    Devolve lista de dicts: {imagem: PIL.Image, quantidade_pedida, quantidade_preenchimento}
+    Devolve (folhas, cache):
+      folhas: lista de dicts {imagem: PIL.Image, quantidade_pedida, quantidade_preenchimento}
+      cache: o CacheMedalhas usado — permite checar depois quais santos
+             foram ampliados além da resolução original (cache.imagens_ampliadas()).
     """
     capacidade = config.capacidade_por_folha
     paginas = paginar_com_preenchimento(medalhas, capacidade, chave_santo_preenchimento, modelo_preenchimento)
@@ -87,7 +90,21 @@ def gerar_folhas(medalhas, config: ConfigTamanho, pasta_imagens: Path, dpi: int,
                 "quantidade_preenchimento": pagina["quantidade_preenchimento"],
             }
         )
-    return resultado
+    return resultado, cache
+
+
+def _achatar_para_rgb_opaco(imagem_rgba: Image.Image) -> Image.Image:
+    """Compõe a folha (RGBA) sobre um fundo branco opaco e descarta o canal
+    alfa. A folha final nunca tem transparência de verdade (cada posição da
+    grade é sempre preenchida, com pedido real ou com o santo de
+    preenchimento) — então isso não perde nada visualmente, só evita
+    carregar um 4º canal inteiro à toa no arquivo. Compor explicitamente
+    sobre branco (em vez de só descartar o alfa) evita manchas escuras caso
+    alguma arte de origem tenha transparência interna.
+    """
+    fundo = Image.new("RGB", imagem_rgba.size, (255, 255, 255))
+    fundo.paste(imagem_rgba, (0, 0), imagem_rgba)
+    return fundo
 
 
 def salvar_folhas(folhas, pasta_saida: Path, config: ConfigTamanho, dpi: int, tambem_pdf: bool = False):
@@ -99,13 +116,15 @@ def salvar_folhas(folhas, pasta_saida: Path, config: ConfigTamanho, dpi: int, ta
     total_paginas = len(folhas)
     for indice, folha in enumerate(folhas, start=1):
         nome_base = f"folha_{config.nome_exibicao}_pag{indice}_de_{total_paginas}"
+        imagem_final = _achatar_para_rgb_opaco(folha["imagem"])
+
         caminho_png = pasta_saida / f"{nome_base}.png"
-        folha["imagem"].save(caminho_png, dpi=(dpi, dpi))
+        imagem_final.save(caminho_png, dpi=(dpi, dpi), optimize=True, compress_level=9)
         caminhos.append(caminho_png)
 
         if tambem_pdf:
             caminho_pdf = pasta_saida / f"{nome_base}.pdf"
-            folha["imagem"].convert("RGB").save(caminho_pdf, resolution=dpi)
+            imagem_final.save(caminho_pdf, resolution=dpi)
             caminhos.append(caminho_pdf)
 
     return caminhos

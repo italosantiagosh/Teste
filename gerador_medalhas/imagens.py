@@ -53,16 +53,33 @@ def preparar_medalha_circular(
 
 
 class CacheMedalhas:
-    """Evita reprocessar a mesma combinação santo+modelo+tamanho várias vezes."""
+    """Evita reprocessar a mesma combinação santo+modelo+tamanho várias vezes.
+
+    De quebra, registra quando a imagem de origem é menor do que o círculo
+    final pedido: nesse caso o círculo está sendo ampliado (interpolado)
+    além da resolução real da arte, e aumentar o DPI não traz nenhum
+    detalhe novo para aquele santo específico — só deixa o arquivo maior.
+    """
 
     def __init__(self, pasta_imagens: Path, diametro_px: int):
         self.pasta_imagens = Path(pasta_imagens)
         self.diametro_px = diametro_px
         self._cache: dict[tuple[str, str], Image.Image] = {}
+        self._fator_ampliacao: dict[tuple[str, str], float] = {}
 
     def obter(self, chave_santo: str, modelo: str) -> Image.Image:
         chave = (chave_santo, modelo)
         if chave not in self._cache:
             caminho = localizar_imagem(self.pasta_imagens, chave_santo, modelo)
+            with Image.open(caminho) as imagem_original:
+                lado_original = min(imagem_original.size)
+            if lado_original > 0:
+                self._fator_ampliacao[chave] = self.diametro_px / lado_original
             self._cache[chave] = preparar_medalha_circular(caminho, self.diametro_px)
         return self._cache[chave]
+
+    def imagens_ampliadas(self, limiar: float = 1.3) -> dict[tuple[str, str], float]:
+        """Santos cuja arte de origem é pequena demais para o DPI atual
+        (o círculo final ficou mais de `limiar` vezes maior que a imagem
+        original)."""
+        return {chave: fator for chave, fator in self._fator_ampliacao.items() if fator > limiar}

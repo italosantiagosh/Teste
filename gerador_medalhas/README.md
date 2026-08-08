@@ -92,6 +92,53 @@ a tabela inteira uma vez, separa por tamanho e gera as folhas dos dois
 tamanhos na mesma execução — sem precisar rodar dois scripts nem manter
 duas tabelas.
 
+## Correções depois do primeiro teste
+
+**"Guido Schaffer" não foi reconhecido como "Guido"**
+O algoritmo de semelhança de texto (usado para pegar erro de digitação tipo
+"Sãu Jusé") mede o quão parecidas duas strings são de ponta a ponta — e
+"guido_schaffer" x "guido" fica abaixo do limiar de confiança só por causa
+da diferença de tamanho, mesmo sendo claramente o mesmo santo com um
+sobrenome que não está cadastrado. Duas mudanças:
+
+1. Antes de cair pro algoritmo de semelhança geral, o programa agora testa
+   se algum santo cadastrado é um "prefixo" do que foi digitado (tira a
+   última palavra, testa; tira mais uma, testa de novo...) — é isso que
+   pega o caso do Guido.
+2. Se mesmo assim nada for encontrado (ou a sugestão for recusada), em vez
+   de simplesmente pular a linha, o programa agora **pede pra digitar o
+   nome de novo** ali mesmo, na hora, em vez de só listar como erro no
+   final. Só vira erro se você deixar em branco (desistir da linha) ou digitar 5 vezes sem achar.
+
+**Tamanho do arquivo (6MB novo x 20-30MB antigo) — é a melhor qualidade?**
+Sim, e o motivo do tamanho menor é bom: o programa novo salva a folha final
+sem o canal de transparência (alfa), que sobrava sem necessidade — a folha
+sempre fica 100% opaca (todo espaço da grade é sempre preenchido, com
+pedido real ou com o santo de preenchimento), então guardar transparência
+ali era só peso morto no arquivo. Isso, mais compressão PNG no nível máximo
+(sem perda — é o mesmo algoritmo, só com mais esforço de compactação),
+reduziu uns 15-20% sozinho, e ainda cai mais dependendo do quanto suas
+artes têm áreas lisas/repetidas.
+
+Sobre aumentar o DPI: **só ajuda até o ponto em que a imagem de origem tem
+resolução de verdade** — depois disso o programa está só esticando pixels
+por interpolação, sem nenhum detalhe novo, e o arquivo incha à toa (dobrar
+o DPI multiplica os pixels por 4). Por isso agora, ao final de cada
+tamanho, o programa avisa quando alguma arte de origem é pequena demais
+para o DPI pedido:
+
+```
+Aviso: 2 imagem(ns) de origem estão em resolução baixa demais para 1200 DPI
+neste tamanho — estão sendo esticadas, aumentar o DPI não vai deixá-las
+mais nítidas:
+    - Padre Cícero modelo 1: precisaria de ~2.3x mais resolução na imagem de origem
+```
+
+Se aparecer esse aviso pra algum santo, o ganho real de qualidade vem de
+substituir a imagem de origem por uma versão maior — não de aumentar o
+`--dpi`. Se não aparecer nenhum aviso, já está na melhor qualidade que a
+arte permite; subir o DPI além disso só troca espaço em disco por nada.
+
 ## Outras melhorias incluídas
 
 - **CSV ou Excel**: além de `.csv`, o pedido pode ser uma planilha `.xlsx` — útil se quiser usar validação de dados do Excel (lista suspensa de tamanho, por exemplo) pra reduzir erro de digitação na origem.

@@ -36,6 +36,10 @@ def perguntar_confirmacao_terminal(mensagem: str) -> bool:
     return resposta in ("", "s", "sim", "y", "yes")
 
 
+def pedir_texto_terminal(mensagem: str) -> str:
+    return input(f"{mensagem} ").strip()
+
+
 def abrir_arquivo(caminho: Path):
     try:
         if sys.platform.startswith("win"):
@@ -81,7 +85,8 @@ def main():
         sys.exit(1)
 
     perguntar = None if argumentos.sem_confirmar else perguntar_confirmacao_terminal
-    itens_resolvidos, erros = resolver_pedido(tabela, catalogo, perguntar)
+    pedir_texto = None if argumentos.sem_confirmar else pedir_texto_terminal
+    itens_resolvidos, erros = resolver_pedido(tabela, catalogo, perguntar, pedir_texto)
     catalogo.salvar_nomes_exibicao()
 
     if erros:
@@ -110,7 +115,7 @@ def main():
     todos_arquivos_gerados = []
     for chave_tamanho, medalhas in medalhas_por_tamanho.items():
         config_tamanho = obter_config_tamanho(chave_tamanho)
-        folhas = gerar_folhas(
+        folhas, cache = gerar_folhas(
             medalhas,
             config_tamanho,
             pasta_imagens,
@@ -127,6 +132,16 @@ def main():
                 f"  Folha {indice}/{len(folhas)}: {folha['quantidade_pedida']} do pedido"
                 + (f" + {folha['quantidade_preenchimento']} de preenchimento" if folha["quantidade_preenchimento"] else "")
             )
+
+        ampliadas = cache.imagens_ampliadas()
+        if ampliadas:
+            print(
+                f"  Aviso: {len(ampliadas)} imagem(ns) de origem estão em resolução baixa demais para "
+                f"{argumentos.dpi} DPI neste tamanho — estão sendo esticadas, aumentar o DPI não vai deixá-las mais nítidas:"
+            )
+            for (chave_santo, modelo), fator in sorted(ampliadas.items(), key=lambda item: -item[1]):
+                nome_bonito = catalogo.nome_bonito(chave_santo)
+                print(f"    - {nome_bonito} modelo {modelo}: precisaria de ~{fator:.1f}x mais resolução na imagem de origem")
 
     print(f"\n{len(todos_arquivos_gerados)} arquivo(s) salvos em {pasta_saida}")
     if not argumentos.nao_abrir:

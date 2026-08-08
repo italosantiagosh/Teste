@@ -79,9 +79,49 @@ def test_gerar_folhas_end_to_end_com_preenchimento(tmp_path):
 
     medalhas = [{"chave_santo": "pedido", "modelo": "1"} for _ in range(170)]
 
-    folhas = gerar_folhas(medalhas, CONFIG_TESTE, pasta_imagens, dpi=150, chave_santo_preenchimento="sao_jose", modelo_preenchimento="1")
+    folhas, cache = gerar_folhas(medalhas, CONFIG_TESTE, pasta_imagens, dpi=150, chave_santo_preenchimento="sao_jose", modelo_preenchimento="1")
 
     assert len(folhas) == 2
     assert folhas[0]["quantidade_pedida"] == 160
     assert folhas[1]["quantidade_pedida"] == 10
     assert folhas[1]["quantidade_preenchimento"] == 150
+    assert cache is not None
+
+
+def test_salvar_folhas_gera_png_sem_canal_alfa_desperdicado(tmp_path):
+    pasta_imagens = tmp_path / "imagens"
+    pasta_imagens.mkdir()
+    Image.new("RGBA", (30, 30), (200, 50, 50, 255)).save(pasta_imagens / "sao_jose_modelo_1.png")
+
+    medalhas = [{"chave_santo": "sao_jose", "modelo": "1"}] * 5
+    folhas, _ = gerar_folhas(medalhas, CONFIG_TESTE, pasta_imagens, dpi=100, chave_santo_preenchimento="sao_jose", modelo_preenchimento="1")
+
+    from folha import salvar_folhas
+
+    caminhos = salvar_folhas(folhas, tmp_path / "saida", CONFIG_TESTE, dpi=100)
+    imagem_salva = Image.open(caminhos[0])
+    assert imagem_salva.mode == "RGB"
+
+
+def test_achatar_para_rgb_nao_deixa_manchas_onde_origem_tinha_transparencia_interna():
+    from folha import _achatar_para_rgb_opaco
+
+    # pixel com RGB "preto" mas totalmente transparente, como muitos editores salvam
+    imagem = Image.new("RGBA", (4, 4), (0, 0, 0, 0))
+    resultado = _achatar_para_rgb_opaco(imagem)
+    assert resultado.mode == "RGB"
+    assert resultado.getpixel((0, 0)) == (255, 255, 255)
+
+
+def test_gerar_folhas_detecta_imagem_de_origem_pequena_demais(tmp_path):
+    pasta_imagens = tmp_path / "imagens"
+    pasta_imagens.mkdir()
+    # imagem de origem bem pequena (10px) para um DPI que pede um círculo bem maior
+    Image.new("RGBA", (10, 10), (200, 50, 50, 255)).save(pasta_imagens / "sao_jose_modelo_1.png")
+
+    medalhas = [{"chave_santo": "sao_jose", "modelo": "1"}]
+    _, cache = gerar_folhas(medalhas, CONFIG_TESTE, pasta_imagens, dpi=600, chave_santo_preenchimento="sao_jose", modelo_preenchimento="1")
+
+    ampliadas = cache.imagens_ampliadas()
+    assert ("sao_jose", "1") in ampliadas
+    assert ampliadas[("sao_jose", "1")] > 1.3
