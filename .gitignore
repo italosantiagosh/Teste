@@ -17,3 +17,10 @@ build/
 dist/
 *.spec
 AutomacaoTransportadora.exe
+
+# gerador_medalhas: imagens dos santos (arte do usuario, nao vai pro repo)
+# e folhas geradas (saida) nunca devem ser versionadas.
+gerador_medalhas/imagens/*
+!gerador_medalhas/imagens/.gitkeep
+gerador_medalhas/saida/*
+!gerador_medalhas/saida/.gitkeep

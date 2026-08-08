@@ -1,0 +1,126 @@
+# Gerador de folhas de medalhas
+
+Programa para gerar as folhas A4 com os santos, prontas para colar no
+Silhouette Studio por cima do gabarito de corte já calibrado. Substitui os
+antigos `folha de 12mm.py` e `folha de 16mm.py` por um único programa que
+lê **uma tabela só** com todos os tamanhos e gera as folhas de cada um
+automaticamente.
+
+## Como usar
+
+1. Instale as bibliotecas:
+   ```
+   pip install -r requirements.txt
+   ```
+2. Coloque as imagens dos santos em `imagens/`, no padrão
+   `{santo}_modelo_{numero}.png` (ex.: `sao_jose_modelo_1.png`,
+   `carlo_acutis_modelo_2.png` — sem acento, espaço vira `_`).
+3. Edite `pedidos/pedido.csv` (ou crie outro arquivo, `.csv` ou `.xlsx`)
+   com as colunas:
+
+   | santo | modelo | tamanho | quantidade |
+   |---|---|---|---|
+   | São José | 1 | 16 | 155 |
+   | Carlo Acutis | 2 | 12 | 30 |
+
+   Um único arquivo pode misturar 12mm e 16mm à vontade — o programa separa
+   automaticamente e gera as folhas de cada tamanho.
+4. Rode:
+   ```
+   python gerar_medalhas.py
+   ```
+   Isso lê `pedidos/pedido.csv`, gera as folhas em `saida/12mm/` e
+   `saida/16mm/` e abre os PNGs gerados.
+
+Outras opções (`python gerar_medalhas.py --help`):
+
+- `python gerar_medalhas.py caminho/outro_pedido.xlsx` — usa outro arquivo de pedido.
+- `--dpi 1200` — resolução de saída (padrão: 600, já bem acima do que qualquer impressora de adesivo usa).
+- `--pdf` — também salva cada folha em PDF, além do PNG (veja a pergunta 1 abaixo).
+- `--sem-confirmar` — não pergunta nada; nomes que não baterem exatamente viram erro na lista, em vez de sugestão interativa. Útil pra rodar sem alguém acompanhando o terminal.
+- `--nao-abrir` — não abre os arquivos automaticamente ao final.
+
+## Respostas às melhorias pedidas
+
+**1) PNG é mesmo o melhor formato para o fluxo com o Silhouette Studio?**
+Sim, mantendo PNG faz sentido porque o gabarito de corte já é calibrado em
+cima da posição exata dos círculos dessa grade — trocar para outro formato
+não traria nenhuma vantagem e ainda arriscaria descalibrar o encaixe. O
+único risco do PNG é o Silhouette Studio, às vezes, não respeitar o DPI
+gravado no arquivo e importar a imagem em outra escala física, obrigando a
+redimensionar manualmente para conferir com o gabarito. Por isso foi
+adicionada a opção `--pdf`: o PDF grava o tamanho físico da página de forma
+inequívoca (independente da resolução), então se em algum teste a
+importação do PNG vier com o tamanho errado, o PDF é uma alternativa mais
+confiável para o mesmo posicionamento.
+
+**2) Melhor qualidade possível nas imagens**
+- Antialiasing por *supersampling*: cada medalha é processada em 4x o
+  tamanho final antes de aplicar a máscara circular e reduzir com Lanczos —
+  a borda do círculo fica lisa, sem serrilhado (o mesmo truque que estava
+  sendo testado em `montar_folha copy.py`, agora ativo por padrão).
+- Nitidez leve (`UnsharpMask`) depois da redução, pra compensar a suavização natural do redimensionamento.
+- DPI configurável, com um padrão de 600 (bem acima do necessário pra impressão de adesivo, sem gerar arquivos gigantes desnecessariamente — pode subir pra 1200 com `--dpi 1200` se quiser testar).
+
+**3) Gerar automaticamente mais de uma folha**
+O programa soma a quantidade pedida de cada tamanho e divide pela
+capacidade da folha (198 no 16mm, 360 no 12mm): quantas folhas cheias
+couberem são geradas cheias com o pedido, e a última folha recebe o
+restante do pedido + São José modelo 1 preenchendo o resto — exatamente o
+exemplo dos 350 santos de 16mm (2 folhas cheias + uma terceira com o
+restante e o preenchimento). O terminal mostra quantas folhas saíram e
+quanto de cada uma é pedido real vs. preenchimento.
+
+**4) O programa tenta reconhecer nomes parecidos**
+Se o santo digitado não bater exatamente com nenhuma imagem em `imagens/`
+(sem diferenciar acento/maiúscula), o programa procura o nome mais parecido
+e pergunta, por exemplo:
+
+```
+'Sãu Jusé' não encontrado. Você quis dizer 'São José'? [S/n]
+```
+
+Aceitando (Enter ou "s"), a linha é corrigida automaticamente. Recusando,
+ou se nada parecido for encontrado, a linha entra na lista de erros mostrada
+ao final — sem travar o processamento das outras linhas. O mesmo vale pro
+**modelo**: se o santo existe mas o modelo pedido não, o erro já lista quais
+modelos existem pra aquele santo.
+
+**5) Uma tabela só, com os dois tamanhos juntos**
+`pedidos/pedido.csv` agora tem a coluna `tamanho` (12 ou 16). O programa lê
+a tabela inteira uma vez, separa por tamanho e gera as folhas dos dois
+tamanhos na mesma execução — sem precisar rodar dois scripts nem manter
+duas tabelas.
+
+## Outras melhorias incluídas
+
+- **CSV ou Excel**: além de `.csv`, o pedido pode ser uma planilha `.xlsx` — útil se quiser usar validação de dados do Excel (lista suspensa de tamanho, por exemplo) pra reduzir erro de digitação na origem.
+- **Leitura de CSV mais robusta**: tenta `utf-8`, `cp1252` e `latin1` nessa ordem, em vez de travar com erro de acentuação se o arquivo foi salvo em outra codificação.
+- **Erros agrupados, não um por um**: o programa processa a tabela inteira e mostra todos os problemas encontrados de uma vez (linha, motivo), em vez de parar no primeiro santo com problema.
+- **Catálogo de nomes bonitos** (`config/nomes_exibicao.json`): a pasta `imagens/` é a fonte da verdade sobre o que existe, mas os nomes de arquivo não têm acento. Esse arquivo guarda a grafia correta de cada santo pra aparecer certo nas mensagens ("São José", não "Sao Jose") — um santo novo funciona mesmo sem estar cadastrado aqui (aparece sem acento até alguém completar).
+- **Relatório por folha**: cada execução mostra quantas folhas saíram por tamanho e quanto de cada folha é pedido real vs. preenchimento — fácil de conferir antes de imprimir.
+- **Cross-platform**: abrir o arquivo gerado automaticamente agora funciona também fora do Windows (o script original usava `os.startfile`, que só existe no Windows).
+
+## Estrutura
+
+```
+gerador_medalhas/
+  gerar_medalhas.py    # ponto de entrada (CLI)
+  config_folhas.py     # grade/margens de cada tamanho de medalha
+  catalogo.py           # o que existe em imagens/ + nomes de exibição
+  normalizacao.py       # normalizar nome e sugerir correspondência parecida
+  pedido.py             # ler e validar a tabela de pedido
+  imagens.py             # recorte circular + antialiasing + cache
+  folha.py               # paginação e montagem das folhas A4
+  imagens/                # arte dos santos (não versionado)
+  pedidos/pedido.csv       # exemplo (o pedido real de 12mm + 16mm já migrado pra cá)
+  saida/                    # folhas geradas (não versionado)
+  testes/                    # testes automatizados (pytest)
+```
+
+## Rodando os testes
+
+```
+pip install pytest
+python -m pytest testes/
+```
