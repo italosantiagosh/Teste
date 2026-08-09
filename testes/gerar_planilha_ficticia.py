@@ -8,7 +8,10 @@ nomes genéricos diferentes, a renomeação não aconteceria e o teste não
 estaria validando o pipeline de verdade.
 
 Casos incluídos de propósito:
-  - coluna a excluir (`Numero da Nota Fiscal`, `Peso Real em Kg`, `Vendedor`);
+  - coluna a excluir (`Vendedor`);
+  - colunas usadas na mensagem ao cliente (`Cliente Remetente`,
+    `Cliente Pagador`, `Numero da Nota Fiscal`, `Peso Real em Kg`,
+    `Quantidade de Volumes`, `Valor do Frete`);
   - coluna extra não mapeada (mantida ao final, sem perda de dado);
   - pedido e manifesto (primeiro e último) vindos como NÚMERO do Excel
     (viram '.0' na leitura bruta — deve ser removido pelo tratamento);
@@ -41,6 +44,8 @@ def gerar() -> Path:
     dados = [
         {
             "CTRC": "1001",
+            "Cliente Remetente": "JTC Distribuidora Ltda",
+            "Cliente Pagador": "JTC Distribuidora Ltda",
             "Cliente Destinatario": "  Comercial Nordeste Ltda ",
             "Cidade de Entrega": "Natal",
             "Data de Emissao": "01/08/2026",
@@ -50,11 +55,15 @@ def gerar() -> Path:
             "Descricao da Ultima Ocorrencia": "Em transito",
             "Numero da Nota Fiscal": "55501",
             "Peso Real em Kg": 120.5,
+            "Quantidade de Volumes": 3,
+            "Valor do Frete": 350.9,
             "Vendedor": "Fulano",
             "Observacao Extra": "cliente preferencial",
         },
         {
             "CTRC": 1002,  # número puro no Excel -> vira '1002.0' na leitura
+            "Cliente Remetente": "Paiol Comercio Ltda",
+            "Cliente Pagador": "Paiol Comercio Ltda",
             "Cliente Destinatario": "Comércio São José Ltda",  # com acento
             "Cidade de Entrega": "Mossoro",
             "Data de Emissao": "2026-08-01",
@@ -64,11 +73,15 @@ def gerar() -> Path:
             "Descricao da Ultima Ocorrencia": "Pendente",
             "Numero da Nota Fiscal": "55502",
             "Peso Real em Kg": 80,
+            "Quantidade de Volumes": 1,
+            "Valor do Frete": 210,
             "Vendedor": "Fulano",
             "Observacao Extra": "",
         },
         {
             "CTRC": "1002",  # mesmo pedido do anterior, agora como texto puro
+            "Cliente Remetente": "Paiol Comercio Ltda",
+            "Cliente Pagador": "Paiol Comercio Ltda",
             "Cliente Destinatario": "Comércio São José Ltda",
             "Cidade de Entrega": "Mossoro",
             "Data de Emissao": "2026-08-01",
@@ -78,11 +91,15 @@ def gerar() -> Path:
             "Descricao da Ultima Ocorrencia": "Coletado",
             "Numero da Nota Fiscal": "55502",
             "Peso Real em Kg": 80,
+            "Quantidade de Volumes": 1,
+            "Valor do Frete": 210,
             "Vendedor": "Fulano",
             "Observacao Extra": "",
         },
         {
             "CTRC": "1003",
+            "Cliente Remetente": "Vimacedo Distribuidora",
+            "Cliente Pagador": "Comercial Paty Ltda",
             "Cliente Destinatario": "Fortaleza Comercio Ltda",
             "Cidade de Entrega": "Fortaleza",
             "Data de Emissao": "31/13/2026",  # data inválida (mês 13)
@@ -92,11 +109,15 @@ def gerar() -> Path:
             "Descricao da Ultima Ocorrencia": "Pendente",
             "Numero da Nota Fiscal": "55503",
             "Peso Real em Kg": 45.0,
+            "Quantidade de Volumes": 2,
+            "Valor do Frete": 99.5,
             "Vendedor": "Fulano",
             "Observacao Extra": "",
         },
         {
             "CTRC": "00123",  # zeros à esquerda — não pode virar 123
+            "Cliente Remetente": "Comercial Paty Ltda",
+            "Cliente Pagador": "Comercial Paty Ltda",
             "Cliente Destinatario": "Cliente Zero Padded Ltda",
             "Cidade de Entrega": "Recife",
             "Data de Emissao": "05/08/2026",
@@ -106,16 +127,18 @@ def gerar() -> Path:
             "Descricao da Ultima Ocorrencia": "Em transito",
             "Numero da Nota Fiscal": "55504",
             "Peso Real em Kg": 12.3,
+            "Quantidade de Volumes": 1,
+            "Valor do Frete": 40,
             "Vendedor": "Fulano",
             "Observacao Extra": "",
         },
         # Linha completamente vazia (deve ser removida)
         {k: None for k in [
-            "CTRC", "Cliente Destinatario", "Cidade de Entrega",
-            "Data de Emissao", "Primeiro Manifesto", "Ultimo Manifesto",
-            "Placa do Cavalo", "Descricao da Ultima Ocorrencia",
-            "Numero da Nota Fiscal", "Peso Real em Kg", "Vendedor",
-            "Observacao Extra",
+            "CTRC", "Cliente Remetente", "Cliente Pagador", "Cliente Destinatario",
+            "Cidade de Entrega", "Data de Emissao", "Primeiro Manifesto",
+            "Ultimo Manifesto", "Placa do Cavalo", "Descricao da Ultima Ocorrencia",
+            "Numero da Nota Fiscal", "Peso Real em Kg", "Quantidade de Volumes",
+            "Valor do Frete", "Vendedor", "Observacao Extra",
         ]},
     ]
 

@@ -80,14 +80,14 @@ def test_tratar_planilha_remove_linha_vazia(df_tratado):
 
 
 def test_tratar_planilha_remove_colunas_excluidas(df_tratado):
-    for coluna_excluida in ["Numero da Nota Fiscal", "Peso Real em Kg", "Vendedor"]:
-        assert coluna_excluida not in df_tratado.columns
+    assert "Vendedor" not in df_tratado.columns
 
 
 def test_tratar_planilha_renomeia_colunas(df_tratado):
     for coluna_esperada in [
-        "pedido", "cliente", "cidade", "data_emissao", "primeiro_manifesto",
-        "ultimo_manifesto", "placa_cavalo", "status",
+        "pedido", "cliente", "remetente", "pagador", "cidade", "data_emissao",
+        "primeiro_manifesto", "ultimo_manifesto", "placa_cavalo", "status",
+        "nf", "peso_real", "volumes", "valor_frete",
     ]:
         assert coluna_esperada in df_tratado.columns
 

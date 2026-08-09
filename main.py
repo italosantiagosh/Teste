@@ -232,7 +232,7 @@ def _localizar_relatorio_final():
     return candidatos[0]
 
 
-def _carregar_ou_selecionar_cliente():
+def _carregar_ou_selecionar_clientes():
     import json
     import pandas as pd
     from config import SAIDA_DIR
@@ -242,7 +242,7 @@ def _carregar_ou_selecionar_cliente():
     info_selecionada = SAIDA_DIR / "cliente_selecionado.json"
     usar_anterior = False
     if planilha_selecionada.exists() and info_selecionada.exists():
-        resposta = input("Usar o último cliente selecionado? (s/n): ").strip().lower()
+        resposta = input("Usar a última seleção de clientes? (s/n): ").strip().lower()
         usar_anterior = resposta == "s"
 
     if usar_anterior:
@@ -252,20 +252,21 @@ def _carregar_ou_selecionar_cliente():
 
     caminho = _localizar_relatorio_final()
     df = pd.read_excel(caminho)
-    dados, info = clientes.selecionar_cliente_interativo(df)
+    dados, info = clientes.selecionar_varios_clientes_interativo(df)
     clientes.salvar_selecao(dados, info, SAIDA_DIR)
     return dados, info
 
 
 def opcao_4_consultar_cliente() -> None:
-    dados, info = _carregar_ou_selecionar_cliente()
-    print(f"\nCliente: {info['nome']}")
-    if info.get("cnpj"):
-        print(f"CNPJ: {info['cnpj']}")
+    dados, info = _carregar_ou_selecionar_clientes()
+    print(f"\nClientes selecionados: {info['nome']}")
     print(f"Quantidade de cargas: {len(dados)}")
 
     colunas_exibir = [
-        c for c in ["pedido", "cidade", "status", "motorista", "previsao_entrega"]
+        c for c in [
+            "pedido", "remetente", "pagador", "cidade", "nf", "peso_real",
+            "volumes", "valor_frete", "motorista", "status", "previsao_entrega",
+        ]
         if c in dados.columns
     ]
     if colunas_exibir:
@@ -276,8 +277,9 @@ def opcao_5_gerar_mensagem() -> None:
     from config import SAIDA_DIR
     from src import mensagem
 
-    dados, info = _carregar_ou_selecionar_cliente()
-    texto = mensagem.montar_mensagem_cliente(info["nome"], dados)
+    dados, info = _carregar_ou_selecionar_clientes()
+    situacoes = mensagem.revisar_situacoes_interativo(dados)
+    texto = mensagem.montar_mensagem_clientes(dados, situacoes)
     blocos = mensagem.dividir_mensagem(texto)
 
     caminho = SAIDA_DIR / "mensagem_cliente.txt"
@@ -288,29 +290,48 @@ def opcao_5_gerar_mensagem() -> None:
     print(f"Mensagem salva em: {caminho}")
 
 
-def _buscar_telefone_cliente(info: dict) -> str:
+def _buscar_telefones_clientes(nomes: list[str]) -> dict[str, str]:
     from config import CLIENTES
-    from src.utils import normalizar_cnpj, normalizar_texto
+    from src.utils import normalizar_texto
 
-    cnpj_alvo = normalizar_cnpj(info.get("cnpj", ""))
-    nome_alvo = normalizar_texto(info.get("nome", ""))
-    for cadastro in CLIENTES.get("clientes", []):
-        if cnpj_alvo and normalizar_cnpj(cadastro.get("cnpj", "")) == cnpj_alvo:
-            return str(cadastro.get("whatsapp", ""))
-        if nome_alvo and normalizar_texto(cadastro.get("nome", "")) == nome_alvo:
-            return str(cadastro.get("whatsapp", ""))
-    return ""
+    telefones: dict[str, str] = {}
+    for nome in nomes:
+        alvo = normalizar_texto(nome)
+        for cadastro in CLIENTES.get("clientes", []):
+            if alvo and normalizar_texto(cadastro.get("nome", "")) == alvo:
+                telefones[nome] = str(cadastro.get("whatsapp", ""))
+                break
+    return telefones
+
+
+def _escolher_telefone_envio(info: dict) -> str:
+    nomes = info.get("nomes") or [info.get("nome", "")]
+    telefones = _buscar_telefones_clientes(nomes)
+    valores_unicos = set(telefones.values())
+
+    if len(valores_unicos) == 1:
+        return next(iter(valores_unicos))
+
+    if telefones:
+        print("\nTelefones cadastrados encontrados para os clientes selecionados:")
+        for nome, telefone in telefones.items():
+            print(f"  {nome}: {telefone}")
+        if len(telefones) < len(nomes):
+            faltando = [n for n in nomes if n not in telefones]
+            print(f"Sem cadastro de WhatsApp: {', '.join(faltando)}")
+        return input("Qual telefone usar para o envio (DDI+DDD+número)? ").strip()
+
+    return input("Telefone com DDI e DDD (ex.: 5584999999999): ").strip()
 
 
 def opcao_6_preparar_whatsapp() -> None:
     from src import mensagem, whatsapp
 
-    dados, info = _carregar_ou_selecionar_cliente()
-    texto = mensagem.montar_mensagem_cliente(info["nome"], dados)
+    dados, info = _carregar_ou_selecionar_clientes()
+    situacoes = mensagem.revisar_situacoes_interativo(dados)
+    texto = mensagem.montar_mensagem_clientes(dados, situacoes)
     blocos = mensagem.dividir_mensagem(texto)
-    telefone = _buscar_telefone_cliente(info)
-    if not telefone:
-        telefone = input("Telefone com DDI e DDD (ex.: 5584999999999): ").strip()
+    telefone = _escolher_telefone_envio(info)
 
     for indice, bloco in enumerate(blocos, 1):
         if len(blocos) > 1:

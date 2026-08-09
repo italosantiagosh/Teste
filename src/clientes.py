@@ -22,14 +22,30 @@ def buscar_por_cnpj(df: pd.DataFrame, cnpj_busca: str, coluna_cnpj: str = "cnpj"
     return df.loc[serie == alvo].copy()
 
 
-def buscar_por_nome(df: pd.DataFrame, nome_busca: str, coluna_nome: str = "cliente") -> pd.DataFrame:
-    if coluna_nome not in df.columns:
-        raise ValueError(f"Coluna de cliente não encontrada: {coluna_nome}")
+# Colunas onde um nome de cliente pode aparecer: o relatório real não traz
+# CNPJ, então a busca é sempre por nome, em qualquer um desses papéis
+# (quem manda a carga, quem paga o frete ou quem recebe).
+COLUNAS_NOME_CLIENTE = ("remetente", "pagador", "cliente")
+
+
+def buscar_por_nome(
+    df: pd.DataFrame,
+    nome_busca: str,
+    colunas_nome: "tuple[str, ...] | list[str]" = COLUNAS_NOME_CLIENTE,
+) -> pd.DataFrame:
+    colunas_presentes = [c for c in colunas_nome if c in df.columns]
+    if not colunas_presentes:
+        raise ValueError(f"Nenhuma coluna de cliente encontrada: {colunas_nome}")
+
     alvo = normalizar_texto(nome_busca)
     if not alvo:
         return df.iloc[0:0].copy()
-    serie = df[coluna_nome].fillna("").map(normalizar_texto)
-    return df.loc[serie.str.contains(alvo, regex=False, na=False)].copy()
+
+    mascara = pd.Series(False, index=df.index)
+    for coluna in colunas_presentes:
+        mascara |= df[coluna].fillna("").map(normalizar_texto).str.contains(alvo, regex=False, na=False)
+
+    return df.loc[mascara].copy()
 
 
 def listar_clientes_encontrados(df: pd.DataFrame, coluna_nome: str = "cliente", coluna_cnpj: str = "cnpj") -> pd.DataFrame:
@@ -40,50 +56,77 @@ def listar_clientes_encontrados(df: pd.DataFrame, coluna_nome: str = "cliente", 
     return resultado.sort_values(colunas, na_position="last").reset_index(drop=True)
 
 
-def selecionar_cliente_interativo(
+def _nomes_distintos(df: pd.DataFrame, colunas_nome: "tuple[str, ...] | list[str]") -> list[str]:
+    """Reúne os nomes distintos presentes nas colunas de cliente das linhas
+    encontradas, para o operador escolher exatamente qual empresa juntar
+    na mensagem."""
+    nomes: set[str] = set()
+    for coluna in colunas_nome:
+        if coluna not in df.columns:
+            continue
+        nomes.update(v.strip() for v in df[coluna].dropna().astype(str) if v.strip())
+    return sorted(nomes)
+
+
+def selecionar_varios_clientes_interativo(
     df: pd.DataFrame,
-    coluna_nome: str = "cliente",
-    coluna_cnpj: str = "cnpj",
-) -> tuple[pd.DataFrame, dict[str, str]]:
-    termo = input("Digite parte do nome do cliente ou o CNPJ: ").strip()
-    if not termo:
-        raise ValueError("Nenhum cliente informado.")
+    colunas_nome: "tuple[str, ...] | list[str]" = COLUNAS_NOME_CLIENTE,
+) -> tuple[pd.DataFrame, dict[str, object]]:
+    """Permite juntar as cargas de mais de um cliente (por nome) em uma
+    única mensagem — útil quando uma mesma pessoa cuida de várias empresas.
 
-    apenas_digitos = "".join(c for c in termo if c.isdigit())
-    if len(apenas_digitos) >= 8 and coluna_cnpj in df.columns:
-        encontrados = buscar_por_cnpj(df, termo, coluna_cnpj)
-    else:
-        encontrados = buscar_por_nome(df, termo, coluna_nome)
+    Pergunta um nome por vez; a cada nome adicionado, pergunta se o
+    operador quer incluir mais algum antes de fechar a seleção.
+    """
+    colunas_presentes = [c for c in colunas_nome if c in df.columns]
+    if not colunas_presentes:
+        raise ValueError(
+            "A planilha não contém colunas de cliente (remetente/pagador/destinatário)."
+        )
 
-    if encontrados.empty:
-        raise ValueError("Nenhum cliente encontrado.")
+    nomes_selecionados: list[str] = []
+    partes: list[pd.DataFrame] = []
 
-    opcoes = listar_clientes_encontrados(encontrados, coluna_nome, coluna_cnpj)
-    print("\nClientes encontrados:")
-    for indice, linha in opcoes.iterrows():
-        cnpj = str(linha.get(coluna_cnpj, "")).strip()
-        complemento = f" | {cnpj}" if cnpj and cnpj.lower() != "nan" else ""
-        print(f"{indice + 1} - {linha[coluna_nome]}{complemento}")
+    while True:
+        termo = input("Digite parte do nome do cliente: ").strip()
+        if not termo:
+            print("Nenhum nome informado.")
+        else:
+            encontrados = buscar_por_nome(df, termo, colunas_presentes)
+            if encontrados.empty:
+                print("Nenhum cliente encontrado com esse nome.")
+            else:
+                opcoes = _nomes_distintos(encontrados, colunas_presentes)
+                print("\nNomes encontrados:")
+                for indice, nome in enumerate(opcoes, 1):
+                    print(f"{indice} - {nome}")
 
-    if len(opcoes) == 1:
-        escolha = 0
-    else:
-        resposta = input("Escolha o número do cliente: ").strip()
-        if not resposta.isdigit() or not (1 <= int(resposta) <= len(opcoes)):
-            raise ValueError("Escolha inválida.")
-        escolha = int(resposta) - 1
+                resposta = input("Escolha o número do nome a adicionar: ").strip()
+                if resposta.isdigit() and 1 <= int(resposta) <= len(opcoes):
+                    nome_escolhido = opcoes[int(resposta) - 1]
+                    if nome_escolhido in nomes_selecionados:
+                        print(f"'{nome_escolhido}' já está na mensagem.")
+                    else:
+                        filtro = pd.Series(False, index=df.index)
+                        for coluna in colunas_presentes:
+                            filtro |= df[coluna].astype(str).str.strip() == nome_escolhido
+                        partes.append(df.loc[filtro].copy())
+                        nomes_selecionados.append(nome_escolhido)
+                        print(f"'{nome_escolhido}' adicionado à mensagem.")
+                else:
+                    print("Escolha inválida — nada foi adicionado.")
 
-    selecionado = opcoes.iloc[escolha]
-    nome = str(selecionado[coluna_nome])
-    filtro = df[coluna_nome].astype(str) == nome
-    cnpj = ""
-    if coluna_cnpj in df.columns and coluna_cnpj in selecionado.index:
-        cnpj = str(selecionado.get(coluna_cnpj, "")).strip()
-        if cnpj and cnpj.lower() != "nan":
-            filtro &= df[coluna_cnpj].astype(str) == cnpj
+        resposta_continuar = input(
+            "Adicionar outro cliente à mensagem? (s/n): "
+        ).strip().lower()
+        if resposta_continuar != "s":
+            break
 
-    dados = df.loc[filtro].copy()
-    info = {"nome": nome, "cnpj": "" if cnpj.lower() == "nan" else cnpj}
+    if not partes:
+        raise ValueError("Nenhum cliente foi selecionado.")
+
+    dados = pd.concat(partes).drop_duplicates()
+    info = {"nome": " + ".join(nomes_selecionados), "nomes": nomes_selecionados}
     return dados, info
 
 

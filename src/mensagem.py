@@ -1,4 +1,8 @@
-"""Montagem de mensagens de texto com as cargas do cliente."""
+"""Montagem de mensagens de texto com a posição de cargas, no formato de
+tabela usado manualmente antes (Remetente/Pagador/Cidade/NF/Peso/Vol/Vr
+Frete/Motorista/Situação), podendo juntar mais de um cliente na mesma
+mensagem.
+"""
 from __future__ import annotations
 
 from datetime import date, datetime
@@ -32,44 +36,118 @@ def _formatar_data(valor: object) -> str:
     return str(valor)
 
 
-def montar_mensagem_cliente(
-    nome_cliente: str,
-    pedidos_cliente: pd.DataFrame,
+def _formatar_numero_br(valor: object) -> str | None:
+    """Formata um número (peso, valor) no padrão brasileiro (1.234,56).
+
+    Aceita tanto texto com vírgula decimal (como vem do relatório) quanto
+    ponto decimal (como o Excel/pandas às vezes grava). Se não for
+    possível interpretar como número, devolve o texto original sem
+    alteração — nunca inventa um valor.
+    """
+    if valor is None or (isinstance(valor, float) and pd.isna(valor)):
+        return None
+    texto = str(valor).strip()
+    if not texto or texto.lower() == "nan":
+        return None
+
+    texto_normalizado = texto.replace(".", "").replace(",", ".") if "," in texto else texto
+    try:
+        numero = float(texto_normalizado)
+    except ValueError:
+        return texto
+
+    inteiro, _, decimal = f"{numero:,.2f}".partition(".")
+    inteiro = inteiro.replace(",", ".")
+    return f"{inteiro},{decimal}"
+
+
+def _formatar_peso(valor: object) -> str:
+    formatado = _formatar_numero_br(valor)
+    return f"{formatado} kg" if formatado else "NÃO INFORMADO"
+
+
+def _formatar_moeda(valor: object) -> str:
+    formatado = _formatar_numero_br(valor)
+    return f"R$ {formatado}" if formatado else "NÃO INFORMADO"
+
+
+def _previsao_bruta(pedido: pd.Series) -> object:
+    for coluna in ("previsao_entrega_calculada", "previsao_entrega", "prev_chegada"):
+        if coluna in pedido.index and pd.notna(pedido.get(coluna)):
+            return pedido.get(coluna)
+    return None
+
+
+def sugestao_situacao(pedido: pd.Series) -> str:
+    """Situação + previsão sugeridas a partir dos dados do sistema —
+    ponto de partida para o operador confirmar ou reescrever."""
+    status = _valor(pedido, "status", "situacao_mdfe")
+    previsao = _formatar_data(_previsao_bruta(pedido))
+    return f"{status} | Previsão: {previsao}"
+
+
+def revisar_situacoes_interativo(pedidos: pd.DataFrame) -> dict[int, str]:
+    """Mostra, carga por carga, a situação/previsão sugerida e deixa o
+    operador aceitar (Enter) ou digitar o texto que achar melhor — é o
+    mesmo texto livre que era escrito manualmente antes (ex.: "Em rota
+    para entrega amanhã terça"), só que com uma sugestão pronta.
+    """
+    situacoes: dict[int, str] = {}
+    print("\nRevisão da situação de cada carga (Enter mantém o texto sugerido):")
+    for indice, pedido in pedidos.iterrows():
+        sugestao = sugestao_situacao(pedido)
+        identificacao = _valor(pedido, "nf", "pedido", padrao="?")
+        resposta = input(f"NF/Pedido {identificacao} — [{sugestao}]: ").strip()
+        situacoes[indice] = resposta or sugestao
+    return situacoes
+
+
+def montar_mensagem_clientes(
+    pedidos: pd.DataFrame,
+    situacoes: dict[int, str] | None = None,
     data_referencia: str | None = None,
 ) -> str:
-    if pedidos_cliente.empty:
-        raise ValueError("Não há cargas para o cliente selecionado.")
+    """Monta a mensagem de posição de cargas no formato de tabela
+    (Remetente/Pagador/Cidade/NF/Peso/Vol/Vr Frete/Motorista/Situação).
+
+    `pedidos` pode conter cargas de mais de um cliente juntas (ver
+    `src.clientes.selecionar_varios_clientes_interativo`) — cada carga
+    aparece com seu próprio remetente/pagador na linha.
+    """
+    if pedidos.empty:
+        raise ValueError("Não há cargas para montar a mensagem.")
 
     data_referencia = data_referencia or date.today().strftime("%d/%m/%Y")
-    linhas: list[str] = []
+    situacoes = situacoes or {}
 
-    for _, pedido in pedidos_cliente.iterrows():
-        numero = _valor(pedido, "pedido", "CTRC")
-        cidade = _valor(pedido, "cidade", "destino")
-        status = _valor(pedido, "status", "situacao_mdfe")
-        motorista = _valor(pedido, "motorista", padrao="NÃO INFORMADO")
-        previsao_bruta = None
-        for coluna in ("previsao_entrega_calculada", "previsao_entrega", "prev_chegada"):
-            if coluna in pedido.index and pd.notna(pedido.get(coluna)):
-                previsao_bruta = pedido.get(coluna)
-                break
-        previsao = _formatar_data(previsao_bruta)
+    linhas: list[str] = []
+    for indice, pedido in pedidos.iterrows():
+        remetente = _valor(pedido, "remetente")
+        pagador = _valor(pedido, "pagador")
+        cidade = _valor(pedido, "cidade")
+        nf = _valor(pedido, "nf")
+        peso = _formatar_peso(pedido.get("peso_real"))
+        volumes = _valor(pedido, "volumes")
+        frete = _formatar_moeda(pedido.get("valor_frete"))
+        motorista = _valor(pedido, "motorista")
+        situacao = situacoes.get(indice) or sugestao_situacao(pedido)
 
         linhas.append(
-            f"• Carga {numero} | Destino: {cidade} | "
-            f"Status: {status} | Motorista: {motorista} | Previsão: {previsao}"
+            "\n".join(
+                [
+                    f"• Remetente: {remetente} | Pagador: {pagador}",
+                    f"  Cidade: {cidade} | NF: {nf} | Peso: {peso} | Vol: {volumes} | Vr Frete: {frete}",
+                    f"  Motorista: {motorista}",
+                    f"  Situação: {situacao}",
+                ]
+            )
         )
 
-    return "\n".join(
+    return "\n\n".join(
         [
-            f"Olá, {nome_cliente}!",
-            "",
-            f"Segue a posição atualizada das suas cargas em {data_referencia}:",
-            "",
+            f"POSIÇÃO DE CARGAS — {data_referencia}",
             *linhas,
-            "",
             "As previsões são estimativas e podem sofrer alterações durante o transporte.",
-            "",
             "Qualquer dúvida, estou à disposição.",
         ]
     )
