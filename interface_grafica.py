@@ -4,10 +4,12 @@ dependência nova) para rodar a automação sem precisar abrir um terminal
 ou o VS Code.
 
 Não reimplementa nenhuma regra de negócio: só chama as mesmas funções
-`opcao_*` de `main.py`, com três adaptações para funcionar numa janela:
+`opcao_*` de `main.py`, com adaptações para funcionar numa janela:
 
   - a saída de `print(...)` é redirecionada para a caixa de texto da janela;
   - respostas de `input(...)` são pedidas numa caixinha de diálogo;
+  - perguntas de confirmação (prompts terminados em "(s/n)") viram uma
+    caixinha com botões Sim/Não, em vez de precisar digitar "s" ou "n";
   - a senha pedida via `getpass.getpass(...)` usa uma caixinha com o texto
     mascarado, em vez do terminal.
 
@@ -26,12 +28,18 @@ from __future__ import annotations
 import builtins
 import getpass as _getpass_module
 import queue
+import re
 import sys
 import threading
 import tkinter as tk
 from tkinter import scrolledtext, ttk
 
 import main as automacao
+
+# Prompts terminados em "(s/n)" (o padrão usado em todo o projeto para
+# perguntas de sim/não) viram uma caixinha com botões Sim/Não em vez de
+# uma caixa de texto onde seria preciso digitar "s" ou "n".
+_PADRAO_SIM_NAO = re.compile(r"\(s/n\)\s*:?\s*$", re.IGNORECASE)
 
 MENU_BOTOES = [
     ("1 - Baixar novo relatório", automacao.opcao_1_baixar_relatorio),
@@ -55,6 +63,7 @@ class JanelaAutomacao:
         # principal (Tkinter). Itens possíveis:
         #   ("saida", texto)
         #   ("pedido", prompt, mascarar, evento, resultado_dict)
+        #   ("confirmar", prompt, evento, resultado_dict)
         #   ("fim",)
         self._fila_eventos: "queue.Queue[tuple]" = queue.Queue()
         self._em_execucao = False
@@ -122,6 +131,17 @@ class JanelaAutomacao:
                     resultado["valor"] = resposta if resposta is not None else ""
                     evento.set()
 
+                elif tipo == "confirmar":
+                    _, prompt, evento, resultado = item
+                    from tkinter import messagebox
+
+                    pergunta = _PADRAO_SIM_NAO.sub("", prompt).strip() or prompt
+                    resposta = messagebox.askyesno(
+                        "Automação Transportadora", pergunta, parent=self.root
+                    )
+                    resultado["valor"] = "s" if resposta else "n"
+                    evento.set()
+
                 elif tipo == "fim":
                     self._em_execucao = False
                     self._atualizar_botoes(True)
@@ -140,6 +160,19 @@ class JanelaAutomacao:
         self._fila_eventos.put(("pedido", prompt, mascarar, evento, resultado))
         evento.wait()
         return resultado["valor"]
+
+    def _pedir_confirmacao(self, prompt: str) -> str:
+        resultado: dict[str, str] = {}
+        evento = threading.Event()
+        self._fila_eventos.put(("confirmar", prompt, evento, resultado))
+        evento.wait()
+        return resultado["valor"]
+
+    def _entrada(self, prompt: str = "") -> str:
+        texto_prompt = str(prompt)
+        if _PADRAO_SIM_NAO.search(texto_prompt):
+            return self._pedir_confirmacao(texto_prompt)
+        return self._pedir_texto(texto_prompt)
 
     # ------------------------------------------------------------------
     # Execução das ações (thread separada, com input/print substituídos)
@@ -164,7 +197,7 @@ class JanelaAutomacao:
             getpass_original = _getpass_module.getpass
 
             sys.stdout = _EscritorParaFila(self)
-            builtins.input = lambda prompt="": self._pedir_texto(str(prompt))
+            builtins.input = self._entrada
             _getpass_module.getpass = lambda prompt="Senha: ": self._pedir_texto(
                 str(prompt), mascarar=True
             )
