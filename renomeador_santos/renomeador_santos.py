@@ -167,7 +167,10 @@ class JanelaRenomeador:
 
         nome_normalizado = normalizar_nome(self.campo_nome.get())
         if not nome_normalizado:
-            self.rotulo_aviso.configure(text="Digite um nome antes de salvar.")
+            # Enter sem digitar nada = mesma coisa que "Pular": ignora esta
+            # imagem e não copia nada, sem avisar (é o caminho rápido para
+            # descartar imagens que não interessam).
+            self._pular()
             return
 
         if nome_normalizado.lower() in self.nomes_usados:
