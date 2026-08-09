@@ -7,8 +7,11 @@ from __future__ import annotations
 
 from datetime import date, datetime
 import logging
+import re
 
 import pandas as pd
+
+from src.utils import converter_numero_br, normalizar_texto
 
 logger = logging.getLogger("automacao_transportadora")
 
@@ -37,25 +40,10 @@ def _formatar_data(valor: object) -> str:
 
 
 def _formatar_numero_br(valor: object) -> str | None:
-    """Formata um número (peso, valor) no padrão brasileiro (1.234,56).
-
-    Aceita tanto texto com vírgula decimal (como vem do relatório) quanto
-    ponto decimal (como o Excel/pandas às vezes grava). Se não for
-    possível interpretar como número, devolve o texto original sem
-    alteração — nunca inventa um valor.
-    """
-    if valor is None or (isinstance(valor, float) and pd.isna(valor)):
+    """Formata um número (peso, valor) no padrão brasileiro (1.234,56)."""
+    numero = converter_numero_br(valor)
+    if numero is None:
         return None
-    texto = str(valor).strip()
-    if not texto or texto.lower() == "nan":
-        return None
-
-    texto_normalizado = texto.replace(".", "").replace(",", ".") if "," in texto else texto
-    try:
-        numero = float(texto_normalizado)
-    except ValueError:
-        return texto
-
     inteiro, _, decimal = f"{numero:,.2f}".partition(".")
     inteiro = inteiro.replace(",", ".")
     return f"{inteiro},{decimal}"
@@ -79,27 +67,108 @@ def _previsao_bruta(pedido: pd.Series) -> object:
 
 
 def sugestao_situacao(pedido: pd.Series) -> str:
-    """Situação + previsão sugeridas a partir dos dados do sistema —
-    ponto de partida para o operador confirmar ou reescrever."""
-    status = _valor(pedido, "status", "situacao_mdfe")
-    previsao = _formatar_data(_previsao_bruta(pedido))
-    return f"{status} | Previsão: {previsao}"
+    """Situação sugerida a partir dos dados do sistema — ponto de partida
+    para o operador confirmar ou reescrever. Não inclui a previsão: ela
+    fica só na planilha (coluna previsao_entrega) para análise, não na
+    mensagem ao cliente."""
+    return _valor(pedido, "status", "situacao_mdfe")
 
 
 def revisar_situacoes_interativo(pedidos: pd.DataFrame) -> dict[int, str]:
-    """Mostra, carga por carga, a situação/previsão sugerida e deixa o
-    operador aceitar (Enter) ou digitar o texto que achar melhor — é o
-    mesmo texto livre que era escrito manualmente antes (ex.: "Em rota
-    para entrega amanhã terça"), só que com uma sugestão pronta.
+    """Mostra, carga por carga, a situação sugerida (com a previsão como
+    referência) e deixa o operador aceitar (Enter) ou digitar o texto que
+    achar melhor — é o mesmo texto livre que era escrito manualmente antes
+    (ex.: "Em rota para entrega amanhã terça"), só que com uma sugestão
+    pronta. A previsão mostrada aqui é só apoio para a decisão — não entra
+    na mensagem final.
     """
     situacoes: dict[int, str] = {}
     print("\nRevisão da situação de cada carga (Enter mantém o texto sugerido):")
     for indice, pedido in pedidos.iterrows():
         sugestao = sugestao_situacao(pedido)
+        previsao = _formatar_data(_previsao_bruta(pedido))
         identificacao = _valor(pedido, "nf", "pedido", padrao="?")
-        resposta = input(f"NF/Pedido {identificacao} — [{sugestao}]: ").strip()
+        resposta = input(
+            f"NF/Pedido {identificacao} — previsão: {previsao} — [{sugestao}]: "
+        ).strip()
         situacoes[indice] = resposta or sugestao
     return situacoes
+
+
+# ---------------------------------------------------------------------------
+# Filtro: cargas "saída para entrega" já resolvidas há alguns dias não
+# precisam mais aparecer na mensagem (normalmente já foram entregues).
+# ---------------------------------------------------------------------------
+
+_PADRAO_DATA_NA_OCORRENCIA = re.compile(r"(\d{2})/(\d{2})/(\d{2,4})")
+_TERMOS_SAIDA_PARA_ENTREGA = ("saida para entrega", "saiu para entrega")
+
+
+def _data_da_ocorrencia(status: str) -> date | None:
+    """Extrai a data embutida no texto da última ocorrência (ex.: '...em
+    03/08/26, 10:08h.'). Devolve None se não achar uma data válida."""
+    if not status:
+        return None
+    encontro = _PADRAO_DATA_NA_OCORRENCIA.search(status)
+    if not encontro:
+        return None
+    dia, mes, ano = encontro.groups()
+    ano_completo = int(ano) + 2000 if len(ano) == 2 else int(ano)
+    try:
+        return date(ano_completo, int(mes), int(dia))
+    except ValueError:
+        return None
+
+
+def _saida_para_entrega_ja_resolvida(
+    pedido: pd.Series, data_referencia: date, dias_limite: int
+) -> bool:
+    status = _valor(pedido, "status", "situacao_mdfe", padrao="")
+    if status == "NÃO INFORMADO":
+        return False
+
+    status_normalizado = normalizar_texto(status)
+    if not any(termo in status_normalizado for termo in _TERMOS_SAIDA_PARA_ENTREGA):
+        return False
+
+    data_ocorrencia = _data_da_ocorrencia(status)
+    if data_ocorrencia is None:
+        return False
+
+    return (data_referencia - data_ocorrencia).days >= dias_limite
+
+
+def filtrar_pedidos_para_mensagem(
+    pedidos: pd.DataFrame,
+    data_referencia: date | None = None,
+    dias_limite_saida_entrega: int = 2,
+) -> pd.DataFrame:
+    """Remove da mensagem cargas cuja última ocorrência já é 'saída para
+    entrega' há `dias_limite_saida_entrega` dias ou mais — normalmente já
+    foram entregues, então não vale mais avisar o cliente sobre isso.
+
+    A planilha tratada continua com todas as cargas; este filtro afeta
+    apenas o texto da mensagem.
+    """
+    if pedidos.empty:
+        return pedidos.copy()
+
+    data_referencia = data_referencia or date.today()
+
+    mascara_manter = ~pedidos.apply(
+        lambda linha: _saida_para_entrega_ja_resolvida(
+            linha, data_referencia, dias_limite_saida_entrega
+        ),
+        axis=1,
+    )
+    removidos = int((~mascara_manter).sum())
+    if removidos:
+        logger.info(
+            "%d carga(s) com 'saída para entrega' há %d+ dias não entraram na mensagem.",
+            removidos,
+            dias_limite_saida_entrega,
+        )
+    return pedidos.loc[mascara_manter].copy()
 
 
 def montar_mensagem_clientes(
@@ -147,7 +216,6 @@ def montar_mensagem_clientes(
         [
             f"POSIÇÃO DE CARGAS — {data_referencia}",
             *linhas,
-            "As previsões são estimativas e podem sofrer alterações durante o transporte.",
             "Qualquer dúvida, estou à disposição.",
         ]
     )

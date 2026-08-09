@@ -153,7 +153,7 @@ def opcao_3_tratar_e_cruzar() -> None:
     import pandas as pd
 
     from config import SAIDA_DIR
-    from src import cruzamento
+    from src import cruzamento, relatorio_visual
     from src import tratamento_planilha as tp
 
     sugestao = _localizar_relatorio_baixado()
@@ -213,6 +213,10 @@ def opcao_3_tratar_e_cruzar() -> None:
         print(f"Relatório final salvo em: {caminho_final}")
         if qtd_sem:
             print(f"Pedidos para conferência salvos em: {caminho_sem}")
+
+        caminho_visual = SAIDA_DIR / f"{nome_base}_analise_visual.xlsx"
+        relatorio_visual.gerar_relatorio_visual(resultados["relatorio_completo"], caminho_visual)
+        print(f"Planilha visual (KPIs e gráficos) salva em: {caminho_visual}")
 
     except (FileNotFoundError, ValueError, pd.errors.ParserError) as e:
         print(f"Erro: {e}")
@@ -293,8 +297,14 @@ def opcao_5_gerar_mensagem() -> None:
     from src import mensagem
 
     dados, info = _carregar_ou_selecionar_clientes()
-    situacoes = mensagem.revisar_situacoes_interativo(dados)
-    texto = mensagem.montar_mensagem_clientes(dados, situacoes)
+    dados_mensagem = mensagem.filtrar_pedidos_para_mensagem(dados)
+    if len(dados_mensagem) < len(dados):
+        print(
+            f"{len(dados) - len(dados_mensagem)} carga(s) com 'saída para entrega' "
+            "há 2+ dias não entraram na mensagem (provavelmente já entregues)."
+        )
+    situacoes = mensagem.revisar_situacoes_interativo(dados_mensagem)
+    texto = mensagem.montar_mensagem_clientes(dados_mensagem, situacoes)
     blocos = mensagem.dividir_mensagem(texto)
 
     caminho = SAIDA_DIR / "mensagem_cliente.txt"
@@ -343,8 +353,14 @@ def opcao_6_preparar_whatsapp() -> None:
     from src import mensagem, whatsapp
 
     dados, info = _carregar_ou_selecionar_clientes()
-    situacoes = mensagem.revisar_situacoes_interativo(dados)
-    texto = mensagem.montar_mensagem_clientes(dados, situacoes)
+    dados_mensagem = mensagem.filtrar_pedidos_para_mensagem(dados)
+    if len(dados_mensagem) < len(dados):
+        print(
+            f"{len(dados) - len(dados_mensagem)} carga(s) com 'saída para entrega' "
+            "há 2+ dias não entraram na mensagem (provavelmente já entregues)."
+        )
+    situacoes = mensagem.revisar_situacoes_interativo(dados_mensagem)
+    texto = mensagem.montar_mensagem_clientes(dados_mensagem, situacoes)
     blocos = mensagem.dividir_mensagem(texto)
     telefone = _escolher_telefone_envio(info)
 

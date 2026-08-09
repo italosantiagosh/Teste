@@ -142,6 +142,33 @@ def normalizar_identificador(valor) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Conversão de números em formato brasileiro (1.234,56)
+# ---------------------------------------------------------------------------
+
+
+def converter_numero_br(valor: object) -> float | None:
+    """Converte peso/valor em texto (com vírgula decimal, como vem dos
+    relatórios) para float. Também aceita ponto decimal (caso o Excel/pandas
+    já tenha convertido para número). Devolve None se não for um número
+    válido ou estiver vazio — nunca inventa um valor.
+    """
+    if valor is None:
+        return None
+    if isinstance(valor, float) and valor != valor:  # NaN
+        return None
+
+    texto = str(valor).strip()
+    if not texto or texto.lower() == "nan":
+        return None
+
+    texto_normalizado = texto.replace(".", "").replace(",", ".") if "," in texto else texto
+    try:
+        return float(texto_normalizado)
+    except ValueError:
+        return None
+
+
+# ---------------------------------------------------------------------------
 # Normalização de texto (nomes de clientes, cidades etc.)
 # ---------------------------------------------------------------------------
 
