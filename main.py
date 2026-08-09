@@ -232,6 +232,13 @@ def _localizar_relatorio_final():
     return candidatos[0]
 
 
+# Colunas que a mensagem de posição de cargas depende para não sair com
+# "NÃO INFORMADO" à toa — usadas para detectar uma seleção salva ANTES
+# dessas colunas existirem (cache antigo, de uma versão anterior do
+# programa) e descartá-la em vez de reaproveitar dado incompleto.
+_COLUNAS_MENSAGEM_OBRIGATORIAS = ["remetente", "pagador", "nf", "peso_real", "volumes", "valor_frete"]
+
+
 def _carregar_ou_selecionar_clientes():
     import json
     import pandas as pd
@@ -247,8 +254,16 @@ def _carregar_ou_selecionar_clientes():
 
     if usar_anterior:
         dados = pd.read_excel(planilha_selecionada)
-        info = json.loads(info_selecionada.read_text(encoding="utf-8"))
-        return dados, info
+        colunas_faltando = [c for c in _COLUNAS_MENSAGEM_OBRIGATORIAS if c not in dados.columns]
+        if colunas_faltando:
+            print(
+                "A última seleção salva é de uma versão anterior do programa e não tem "
+                f"as colunas {colunas_faltando} — descartando o cache e selecionando de novo "
+                "a partir do relatório mais recente."
+            )
+        else:
+            info = json.loads(info_selecionada.read_text(encoding="utf-8"))
+            return dados, info
 
     caminho = _localizar_relatorio_final()
     df = pd.read_excel(caminho)
