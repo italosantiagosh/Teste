@@ -22,10 +22,11 @@ def buscar_por_cnpj(df: pd.DataFrame, cnpj_busca: str, coluna_cnpj: str = "cnpj"
     return df.loc[serie == alvo].copy()
 
 
-# Colunas onde um nome de cliente pode aparecer: o relatório real não traz
-# CNPJ, então a busca é sempre por nome, em qualquer um desses papéis
-# (quem manda a carga, quem paga o frete ou quem recebe).
-COLUNAS_NOME_CLIENTE = ("remetente", "pagador", "cliente")
+# Coluna onde o nome do cliente é buscado: o Pagador é quem efetivamente
+# é o cliente (quem contrata/paga o frete) — Remetente e Destinatário
+# podem ser outra empresa (ex.: o próprio fornecedor do cliente). O
+# relatório real também não traz CNPJ, então a busca é sempre por nome.
+COLUNAS_NOME_CLIENTE = ("pagador",)
 
 
 def buscar_por_nome(
@@ -81,7 +82,7 @@ def selecionar_varios_clientes_interativo(
     colunas_presentes = [c for c in colunas_nome if c in df.columns]
     if not colunas_presentes:
         raise ValueError(
-            "A planilha não contém colunas de cliente (remetente/pagador/destinatário)."
+            f"A planilha não contém a(s) coluna(s) de cliente: {colunas_nome}."
         )
 
     nomes_selecionados: list[str] = []
