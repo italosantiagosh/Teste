@@ -33,7 +33,23 @@ def _pedido(**kwargs) -> dict:
     return base
 
 
-def test_filtrar_remove_saida_para_entrega_antiga():
+def test_filtrar_remove_saida_para_entrega_antiga_sem_data_no_texto():
+    # Caso real: "Saida para entrega na cidade de X." não tem NENHUMA data
+    # escrita no texto — só a coluna 'data_ultima_ocorrencia' (vinda do
+    # sistema) tem essa informação.
+    df = pd.DataFrame([
+        _pedido(
+            pedido="1001",
+            status="Saida para entrega na cidade de ALTO DO RODRIGUES.",
+            data_ultima_ocorrencia="05/08/2026",
+        ),
+        _pedido(pedido="1002", status="Em transito"),
+    ])
+    filtrado = mensagem.filtrar_pedidos_para_mensagem(df, data_referencia=date(2026, 8, 9))
+    assert set(filtrado["pedido"]) == {"1002"}
+
+
+def test_filtrar_remove_saida_para_entrega_antiga_com_data_no_texto():
     df = pd.DataFrame([
         _pedido(pedido="1001", status="Saida para entrega em 05/08/26, 09:00h."),
         _pedido(pedido="1002", status="Em transito"),
@@ -44,7 +60,7 @@ def test_filtrar_remove_saida_para_entrega_antiga():
 
 def test_filtrar_mantem_saida_para_entrega_recente():
     df = pd.DataFrame([
-        _pedido(pedido="1001", status="Saiu para entrega em 08/08/26, 09:00h."),
+        _pedido(pedido="1001", status="Saiu para entrega na cidade de X.", data_ultima_ocorrencia="08/08/2026"),
     ])
     filtrado = mensagem.filtrar_pedidos_para_mensagem(df, data_referencia=date(2026, 8, 9))
     assert set(filtrado["pedido"]) == {"1001"}

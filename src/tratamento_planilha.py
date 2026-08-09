@@ -224,23 +224,30 @@ def _parse_data_robusta(serie: pd.Series) -> pd.Series:
 
 
 def tratar_datas(df: pd.DataFrame) -> pd.DataFrame:
-    """Converte a coluna de data de emissão para datetime, registrando falhas."""
-    col = COLUNAS.col_data_emissao
-    if col not in df.columns:
-        logger.warning("Coluna de data ('%s') não encontrada — etapa ignorada.", col)
-        return df
+    """Converte as colunas de data (emissão e última ocorrência) para
+    datetime, registrando falhas de conversão.
 
-    antes_nulos = df[col].isna().sum()
-    df[col] = _parse_data_robusta(df[col])
-    depois_nulos = df[col].isna().sum()
+    A data da última ocorrência é usada para saber HÁ QUANTO TEMPO uma
+    situação como "saída para entrega" foi registrada (ver
+    `src.mensagem.filtrar_pedidos_para_mensagem`) — o texto da ocorrência
+    em si nem sempre traz essa data embutida.
+    """
+    for col in (COLUNAS.col_data_emissao, COLUNAS.col_data_ultima_ocorrencia):
+        if col not in df.columns:
+            logger.warning("Coluna de data ('%s') não encontrada — etapa ignorada.", col)
+            continue
 
-    falhas_conversao = depois_nulos - antes_nulos
-    if falhas_conversao > 0:
-        logger.warning(
-            "%d valores em '%s' não puderam ser convertidos para data.",
-            falhas_conversao,
-            col,
-        )
+        antes_nulos = df[col].isna().sum()
+        df[col] = _parse_data_robusta(df[col])
+        depois_nulos = df[col].isna().sum()
+
+        falhas_conversao = depois_nulos - antes_nulos
+        if falhas_conversao > 0:
+            logger.warning(
+                "%d valores em '%s' não puderam ser convertidos para data.",
+                falhas_conversao,
+                col,
+            )
     return df
 
 

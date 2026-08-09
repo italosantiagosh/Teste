@@ -94,6 +94,7 @@ class ColunasConfig:
     col_cliente: str = _colunas_cfg.get("col_cliente", "cliente")
     col_cidade: str = _colunas_cfg.get("col_cidade", "cidade")
     col_data_emissao: str = _colunas_cfg.get("col_data_emissao", "data_emissao")
+    col_data_ultima_ocorrencia: str = _colunas_cfg.get("col_data_ultima_ocorrencia", "data_ultima_ocorrencia")
     col_motorista: str = _colunas_cfg.get("col_motorista", "motorista")
     col_previsao: str = _colunas_cfg.get("col_previsao", "previsao_entrega")
     # Coluna usada como chave principal no cruzamento pedidos <-> motoristas

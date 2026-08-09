@@ -11,7 +11,10 @@ Casos incluídos de propósito:
   - coluna a excluir (`Vendedor`);
   - colunas usadas na mensagem ao cliente (`Cliente Remetente`,
     `Cliente Pagador`, `Numero da Nota Fiscal`, `Peso Real em Kg`,
-    `Quantidade de Volumes`, `Valor do Frete`);
+    `Quantidade de Volumes`, `Valor do Frete`, `Data da Ultima Ocorrencia`);
+  - status "Saida para entrega" SEM data escrita no texto (caso real do
+    relatório) — só a coluna `Data da Ultima Ocorrencia` tem a data,
+    usada pelo filtro de mensagem (ver `src.mensagem`);
   - coluna extra não mapeada (mantida ao final, sem perda de dado);
   - pedido e manifesto (primeiro e último) vindos como NÚMERO do Excel
     (viram '.0' na leitura bruta — deve ser removido pelo tratamento);
@@ -52,7 +55,8 @@ def gerar() -> Path:
             "Primeiro Manifesto": "GRU 002415-5",
             "Ultimo Manifesto": "",
             "Placa do Cavalo": "NVU5D88",
-            "Descricao da Ultima Ocorrencia": "Em transito",
+            "Descricao da Ultima Ocorrencia": "Saida para entrega na cidade de Natal.",
+            "Data da Ultima Ocorrencia": "01/08/2026",
             "Numero da Nota Fiscal": "55501",
             "Peso Real em Kg": 120.5,
             "Quantidade de Volumes": 3,
@@ -71,6 +75,7 @@ def gerar() -> Path:
             "Ultimo Manifesto": "GRU 002500-1",
             "Placa do Cavalo": "",
             "Descricao da Ultima Ocorrencia": "Pendente",
+            "Data da Ultima Ocorrencia": "01/08/2026",
             "Numero da Nota Fiscal": "55502",
             "Peso Real em Kg": 80,
             "Quantidade de Volumes": 1,
@@ -89,6 +94,7 @@ def gerar() -> Path:
             "Ultimo Manifesto": "",
             "Placa do Cavalo": "QGR9F84",
             "Descricao da Ultima Ocorrencia": "Coletado",
+            "Data da Ultima Ocorrencia": "01/08/2026",
             "Numero da Nota Fiscal": "55502",
             "Peso Real em Kg": 80,
             "Quantidade de Volumes": 1,
@@ -107,6 +113,7 @@ def gerar() -> Path:
             "Ultimo Manifesto": "",
             "Placa do Cavalo": "OWB1D50",
             "Descricao da Ultima Ocorrencia": "Pendente",
+            "Data da Ultima Ocorrencia": "01/08/2026",
             "Numero da Nota Fiscal": "55503",
             "Peso Real em Kg": 45.0,
             "Quantidade de Volumes": 2,
@@ -125,6 +132,7 @@ def gerar() -> Path:
             "Ultimo Manifesto": "",
             "Placa do Cavalo": "AQL2D03",
             "Descricao da Ultima Ocorrencia": "Em transito",
+            "Data da Ultima Ocorrencia": "05/08/2026",
             "Numero da Nota Fiscal": "55504",
             "Peso Real em Kg": 12.3,
             "Quantidade de Volumes": 1,
@@ -137,8 +145,8 @@ def gerar() -> Path:
             "CTRC", "Cliente Remetente", "Cliente Pagador", "Cliente Destinatario",
             "Cidade de Entrega", "Data de Emissao", "Primeiro Manifesto",
             "Ultimo Manifesto", "Placa do Cavalo", "Descricao da Ultima Ocorrencia",
-            "Numero da Nota Fiscal", "Peso Real em Kg", "Quantidade de Volumes",
-            "Valor do Frete", "Vendedor", "Observacao Extra",
+            "Data da Ultima Ocorrencia", "Numero da Nota Fiscal", "Peso Real em Kg",
+            "Quantidade de Volumes", "Valor do Frete", "Vendedor", "Observacao Extra",
         ]},
     ]
 

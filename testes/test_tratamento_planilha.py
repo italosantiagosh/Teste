@@ -87,9 +87,13 @@ def test_tratar_planilha_renomeia_colunas(df_tratado):
     for coluna_esperada in [
         "pedido", "cliente", "remetente", "pagador", "cidade", "data_emissao",
         "primeiro_manifesto", "ultimo_manifesto", "placa_cavalo", "status",
-        "nf", "peso_real", "volumes", "valor_frete",
+        "nf", "peso_real", "volumes", "valor_frete", "data_ultima_ocorrencia",
     ]:
         assert coluna_esperada in df_tratado.columns
+
+
+def test_tratar_planilha_converte_data_ultima_ocorrencia(df_tratado):
+    assert pd.api.types.is_datetime64_any_dtype(df_tratado["data_ultima_ocorrencia"])
 
 
 def test_tratar_planilha_mantem_coluna_extra_nao_mapeada(df_tratado):

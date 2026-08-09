@@ -106,7 +106,13 @@ _TERMOS_SAIDA_PARA_ENTREGA = ("saida para entrega", "saiu para entrega")
 
 def _data_da_ocorrencia(status: str) -> date | None:
     """Extrai a data embutida no texto da última ocorrência (ex.: '...em
-    03/08/26, 10:08h.'). Devolve None se não achar uma data válida."""
+    03/08/26, 10:08h.'). Devolve None se não achar uma data válida.
+
+    Usado apenas como reforço: nem todo status traz data no texto (ex.:
+    "Saida para entrega na cidade de X." não tem nenhuma data escrita) —
+    a fonte principal é a coluna `data_ultima_ocorrencia`, vinda direto do
+    sistema (ver `_data_ultima_ocorrencia`).
+    """
     if not status:
         return None
     encontro = _PADRAO_DATA_NA_OCORRENCIA.search(status)
@@ -120,6 +126,29 @@ def _data_da_ocorrencia(status: str) -> date | None:
         return None
 
 
+def _data_ultima_ocorrencia(pedido: pd.Series) -> date | None:
+    """Data em que a última ocorrência foi registrada no sistema.
+
+    Usa a coluna dedicada `data_ultima_ocorrencia` (vem de 'Data da Ultima
+    Ocorrencia' no relatório) — necessária porque o TEXTO da ocorrência
+    (coluna `status`) nem sempre traz a data escrita (ex.: "Saida para
+    entrega na cidade de X." não tem data nenhuma no texto). Se a coluna
+    não existir ou estiver vazia, tenta como último recurso achar uma data
+    escrita dentro do próprio texto do status.
+    """
+    if "data_ultima_ocorrencia" in pedido.index:
+        valor = pedido.get("data_ultima_ocorrencia")
+        if pd.notna(valor):
+            if isinstance(valor, (datetime, date, pd.Timestamp)):
+                return pd.Timestamp(valor).date()
+            data = pd.to_datetime(str(valor), errors="coerce", dayfirst=True)
+            if pd.notna(data):
+                return data.date()
+
+    status = _valor(pedido, "status", "situacao_mdfe", padrao="")
+    return _data_da_ocorrencia(status)
+
+
 def _saida_para_entrega_ja_resolvida(
     pedido: pd.Series, data_referencia: date, dias_limite: int
 ) -> bool:
@@ -131,7 +160,7 @@ def _saida_para_entrega_ja_resolvida(
     if not any(termo in status_normalizado for termo in _TERMOS_SAIDA_PARA_ENTREGA):
         return False
 
-    data_ocorrencia = _data_da_ocorrencia(status)
+    data_ocorrencia = _data_ultima_ocorrencia(pedido)
     if data_ocorrencia is None:
         return False
 
