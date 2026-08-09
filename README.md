@@ -5,12 +5,6 @@ baixar relatório de entregas, cruzar com a tabela de motoristas, calcular
 previsão de entrega e preparar o envio de uma **mensagem de texto** (sem
 imagem) pelo WhatsApp Web com a posição das entregas de cada cliente.
 
-## Outros programas neste repositório
-
-- [`renomeador_santos/`](renomeador_santos/) — programa independente para
-  renomear e converter em lote uma pasta de imagens de santos. Veja o
-  `README.md` dentro dessa pasta.
-
 ## Status do desenvolvimento
 
 O projeto é construído em etapas, testando cada módulo isoladamente antes
