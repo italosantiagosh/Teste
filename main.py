@@ -55,7 +55,8 @@ MENU = """
 5 - Gerar mensagem de um cliente
 6 - Preparar envio pelo WhatsApp
 7 - Executar processo completo
-8 - Sair
+8 - Gerar links do WhatsApp para vários destinatários
+9 - Sair
 """
 
 
@@ -300,8 +301,8 @@ def opcao_5_gerar_mensagem() -> None:
     dados_mensagem = mensagem.filtrar_pedidos_para_mensagem(dados)
     if len(dados_mensagem) < len(dados):
         print(
-            f"{len(dados) - len(dados_mensagem)} carga(s) com 'saída para entrega' "
-            "há 2+ dias não entraram na mensagem (provavelmente já entregues)."
+            f"{len(dados) - len(dados_mensagem)} carga(s) já resolvida(s) (entregue/em "
+            "conferência, ou 'saída para entrega' há 2+ dias) não entraram na mensagem."
         )
     situacoes = mensagem.revisar_situacoes_interativo(dados_mensagem)
     texto = mensagem.montar_mensagem_clientes(dados_mensagem, situacoes)
@@ -356,8 +357,8 @@ def opcao_6_preparar_whatsapp() -> None:
     dados_mensagem = mensagem.filtrar_pedidos_para_mensagem(dados)
     if len(dados_mensagem) < len(dados):
         print(
-            f"{len(dados) - len(dados_mensagem)} carga(s) com 'saída para entrega' "
-            "há 2+ dias não entraram na mensagem (provavelmente já entregues)."
+            f"{len(dados) - len(dados_mensagem)} carga(s) já resolvida(s) (entregue/em "
+            "conferência, ou 'saída para entrega' há 2+ dias) não entraram na mensagem."
         )
     situacoes = mensagem.revisar_situacoes_interativo(dados_mensagem)
     texto = mensagem.montar_mensagem_clientes(dados_mensagem, situacoes)
@@ -371,6 +372,73 @@ def opcao_6_preparar_whatsapp() -> None:
             break
         if indice < len(blocos):
             input("Depois de enviar no WhatsApp, pressione Enter para abrir a próxima parte...")
+
+
+def _localizar_planilha_contatos():
+    """Mais recente planilha de contatos (nome contendo 'contato') em
+    entrada/ - usada como sugestão padrão na opção 8."""
+    from config import ENTRADA_DIR
+
+    candidatos = [
+        p for p in ENTRADA_DIR.glob("*")
+        if p.is_file() and p.suffix.lower() in {".xlsx", ".xls"} and "contato" in p.stem.lower()
+    ]
+    if not candidatos:
+        return None
+    return max(candidatos, key=lambda p: p.stat().st_mtime)
+
+
+def opcao_8_gerar_links_whatsapp() -> None:
+    from pathlib import Path
+
+    import pandas as pd
+
+    from config import SAIDA_DIR
+    from src import mensagem_em_massa
+
+    try:
+        caminho_relatorio = _localizar_relatorio_final()
+    except FileNotFoundError as e:
+        print(f"Erro: {e}")
+        return
+
+    sugestao = _localizar_planilha_contatos()
+    if sugestao:
+        resposta = input(
+            f"Usar a planilha de contatos mais recente encontrada em entrada/ ({sugestao.name})? "
+            "Pressione Enter para usá-la, ou digite outro caminho: "
+        ).strip()
+        caminho_contatos_str = resposta or str(sugestao)
+    else:
+        caminho_contatos_str = input(
+            "Informe o caminho da planilha de contatos (colunas 'Destinatário' "
+            "e 'Telefone'), ex.: entrada/contatos_whatsapp.xlsx: "
+        ).strip()
+
+    if not caminho_contatos_str:
+        print("Nenhuma planilha de contatos informada.")
+        return
+
+    caminho_contatos = Path(caminho_contatos_str)
+    if not caminho_contatos.exists():
+        print(f"Erro: arquivo não encontrado: {caminho_contatos}")
+        return
+
+    try:
+        df_pedidos = pd.read_excel(caminho_relatorio)
+        df_contatos = pd.read_excel(caminho_contatos, dtype=str)
+
+        caminho_saida = SAIDA_DIR / "links_whatsapp.xlsx"
+        mensagem_em_massa.gerar_planilha_links_whatsapp(df_pedidos, df_contatos, caminho_saida)
+
+        print(f"Planilha de links do WhatsApp gerada em: {caminho_saida}")
+        print(
+            "Abra o arquivo e clique em 'Abrir WhatsApp' em cada linha — a "
+            "mensagem já vem pronta. Linhas com observação mostram o motivo "
+            "de não terem gerado link (sem telefone, sem carga encontrada etc.)."
+        )
+    except (FileNotFoundError, ValueError, pd.errors.ParserError) as e:
+        print(f"Erro: {e}")
 
 
 def opcao_7_processo_completo() -> None:
@@ -399,13 +467,14 @@ def main() -> None:
         "5": opcao_5_gerar_mensagem,
         "6": opcao_6_preparar_whatsapp,
         "7": opcao_7_processo_completo,
+        "8": opcao_8_gerar_links_whatsapp,
     }
 
     while True:
         print(MENU)
         escolha = input("Escolha uma opção: ").strip()
 
-        if escolha == "8":
+        if escolha == "9":
             print("Encerrando.")
             break
 

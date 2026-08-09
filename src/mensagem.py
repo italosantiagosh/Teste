@@ -96,12 +96,31 @@ def revisar_situacoes_interativo(pedidos: pd.DataFrame) -> dict[int, str]:
 
 
 # ---------------------------------------------------------------------------
-# Filtro: cargas "saída para entrega" já resolvidas há alguns dias não
-# precisam mais aparecer na mensagem (normalmente já foram entregues).
+# Filtro: cargas "saída para entrega" já resolvidas há alguns dias, ou já
+# entregues/em conferência no cliente, não precisam mais aparecer na
+# mensagem.
 # ---------------------------------------------------------------------------
 
 _PADRAO_DATA_NA_OCORRENCIA = re.compile(r"(\d{2})/(\d{2})/(\d{2,4})")
 _TERMOS_SAIDA_PARA_ENTREGA = ("saida para entrega", "saiu para entrega")
+
+# Situações que já significam "resolvido" (mercadoria já chegou ao
+# destino) — independente de data, não faz sentido mais avisar o cliente.
+_TERMOS_JA_RESOLVIDO = (
+    "em conferencia",
+    "entrega realizada",
+    "mercadoria entregue",
+    "entregue ao destinatario",
+    "canhoto",
+)
+
+
+def _situacao_ja_resolvida(pedido: pd.Series) -> bool:
+    status = _valor(pedido, "status", "situacao_mdfe", padrao="")
+    if status == "NÃO INFORMADO":
+        return False
+    status_normalizado = normalizar_texto(status)
+    return any(termo in status_normalizado for termo in _TERMOS_JA_RESOLVIDO)
 
 
 def _data_da_ocorrencia(status: str) -> date | None:
@@ -172,9 +191,12 @@ def filtrar_pedidos_para_mensagem(
     data_referencia: date | None = None,
     dias_limite_saida_entrega: int = 2,
 ) -> pd.DataFrame:
-    """Remove da mensagem cargas cuja última ocorrência já é 'saída para
-    entrega' há `dias_limite_saida_entrega` dias ou mais — normalmente já
-    foram entregues, então não vale mais avisar o cliente sobre isso.
+    """Remove da mensagem cargas que já não precisam mais de aviso:
+
+      - 'saída para entrega' há `dias_limite_saida_entrega` dias ou mais
+        (normalmente já foram entregues);
+      - situação já indica que chegou ao destino (em conferência, entrega
+        realizada etc.), não importa a data.
 
     A planilha tratada continua com todas as cargas; este filtro afeta
     apenas o texto da mensagem.
@@ -184,17 +206,26 @@ def filtrar_pedidos_para_mensagem(
 
     data_referencia = data_referencia or date.today()
 
-    mascara_manter = ~pedidos.apply(
+    ja_resolvido = pedidos.apply(_situacao_ja_resolvida, axis=1)
+    saida_antiga = pedidos.apply(
         lambda linha: _saida_para_entrega_ja_resolvida(
             linha, data_referencia, dias_limite_saida_entrega
         ),
         axis=1,
     )
-    removidos = int((~mascara_manter).sum())
-    if removidos:
+    mascara_manter = ~(ja_resolvido | saida_antiga)
+
+    removidos_resolvidos = int(ja_resolvido.sum())
+    removidos_saida_antiga = int((saida_antiga & ~ja_resolvido).sum())
+    if removidos_resolvidos:
+        logger.info(
+            "%d carga(s) com situação já resolvida (entregue/em conferência) não entraram na mensagem.",
+            removidos_resolvidos,
+        )
+    if removidos_saida_antiga:
         logger.info(
             "%d carga(s) com 'saída para entrega' há %d+ dias não entraram na mensagem.",
-            removidos,
+            removidos_saida_antiga,
             dias_limite_saida_entrega,
         )
     return pedidos.loc[mascara_manter].copy()
@@ -207,6 +238,10 @@ def montar_mensagem_clientes(
 ) -> str:
     """Monta a mensagem de posição de cargas no formato de tabela
     (Remetente/Pagador/Cidade/NF/Peso/Vol/Vr Frete/Motorista/Situação).
+
+    Os títulos de cada campo saem em *negrito* usando a formatação nativa
+    do WhatsApp (texto entre asteriscos) — o WhatsApp não tem sublinhado,
+    só negrito/itálico/tachado.
 
     `pedidos` pode conter cargas de mais de um cliente juntas (ver
     `src.clientes.selecionar_varios_clientes_interativo`) — cada carga
@@ -233,17 +268,17 @@ def montar_mensagem_clientes(
         linhas.append(
             "\n".join(
                 [
-                    f"• Remetente: {remetente} | Pagador: {pagador}",
-                    f"  Cidade: {cidade} | NF: {nf} | Peso: {peso} | Vol: {volumes} | Vr Frete: {frete}",
-                    f"  Motorista: {motorista}",
-                    f"  Situação: {situacao}",
+                    f"• *Remetente:* {remetente} | *Pagador:* {pagador}",
+                    f"  *Cidade:* {cidade} | *NF:* {nf} | *Peso:* {peso} | *Vol:* {volumes} | *Vr Frete:* {frete}",
+                    f"  *Motorista:* {motorista}",
+                    f"  *Situação:* {situacao}",
                 ]
             )
         )
 
     return "\n\n".join(
         [
-            f"POSIÇÃO DE CARGAS — {data_referencia}",
+            f"*POSIÇÃO DE CARGAS — {data_referencia}*",
             *linhas,
             "Qualquer dúvida, estou à disposição.",
         ]

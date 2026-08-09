@@ -22,11 +22,11 @@ def buscar_por_cnpj(df: pd.DataFrame, cnpj_busca: str, coluna_cnpj: str = "cnpj"
     return df.loc[serie == alvo].copy()
 
 
-# Coluna onde o nome do cliente é buscado: o Pagador é quem efetivamente
-# é o cliente (quem contrata/paga o frete) — Remetente e Destinatário
-# podem ser outra empresa (ex.: o próprio fornecedor do cliente). O
-# relatório real também não traz CNPJ, então a busca é sempre por nome.
-COLUNAS_NOME_CLIENTE = ("pagador",)
+# Coluna onde o nome do cliente é buscado: o Destinatário é quem
+# efetivamente é o cliente (quem recebe a carga) — Remetente e Pagador
+# podem ser outra empresa na cadeia. O relatório real também não traz
+# CNPJ, então a busca é sempre por nome.
+COLUNAS_NOME_CLIENTE = ("cliente",)
 
 
 def buscar_por_nome(

@@ -49,6 +49,7 @@ MENU_BOTOES = [
     ("5 - Gerar mensagem de um cliente", automacao.opcao_5_gerar_mensagem),
     ("6 - Preparar envio pelo WhatsApp", automacao.opcao_6_preparar_whatsapp),
     ("7 - Executar processo completo", automacao.opcao_7_processo_completo),
+    ("8 - Gerar links do WhatsApp para vários destinatários", automacao.opcao_8_gerar_links_whatsapp),
 ]
 
 

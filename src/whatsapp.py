@@ -20,9 +20,19 @@ def normalizar_telefone(numero: str, ddi_padrao: str = "55") -> str:
     return digitos
 
 
+def montar_link(numero_whatsapp: str, texto_mensagem: str) -> str:
+    """Monta o link do WhatsApp Web com o número e o texto já preenchidos.
+
+    Levanta ValueError (via `normalizar_telefone`) se o telefone for
+    vazio/inválido — nunca gera um link com número quebrado.
+    """
+    numero = normalizar_telefone(numero_whatsapp)
+    return f"https://web.whatsapp.com/send?phone={numero}&text={quote(texto_mensagem)}"
+
+
 def abrir_conversa(numero_whatsapp: str, texto_mensagem: str) -> bool:
     numero = normalizar_telefone(numero_whatsapp)
-    url = f"https://web.whatsapp.com/send?phone={numero}&text={quote(texto_mensagem)}"
+    url = montar_link(numero, texto_mensagem)
     aberto = webbrowser.open(url, new=2)
     logger.info("Conversa preparada no WhatsApp Web para telefone final %s.", numero[-4:])
     return bool(aberto)

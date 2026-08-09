@@ -80,18 +80,46 @@ def test_filtrar_dataframe_vazio_nao_quebra():
     assert filtrado.empty
 
 
+def test_filtrar_remove_situacao_em_conferencia_independente_da_data():
+    df = pd.DataFrame([
+        _pedido(
+            pedido="1001",
+            status="MERCADORIA EM CONFERENCIA NO CLIENTE EM 09/08/26 09:00H (OPC 038).",
+            data_ultima_ocorrencia="09/08/2026",  # hoje mesmo, mas já é pra excluir
+        ),
+        _pedido(pedido="1002", status="Em transito"),
+    ])
+    filtrado = mensagem.filtrar_pedidos_para_mensagem(df, data_referencia=date(2026, 8, 9))
+    assert set(filtrado["pedido"]) == {"1002"}
+
+
+def test_filtrar_remove_entrega_realizada():
+    df = pd.DataFrame([
+        _pedido(pedido="1001", status="Entrega realizada ao destinatario."),
+        _pedido(pedido="1002", status="Em transito"),
+    ])
+    filtrado = mensagem.filtrar_pedidos_para_mensagem(df, data_referencia=date(2026, 8, 9))
+    assert set(filtrado["pedido"]) == {"1002"}
+
+
 def test_mensagem_nao_contem_previsao():
     df = pd.DataFrame([_pedido(previsao_entrega="20/08/2026")])
     texto = mensagem.montar_mensagem_clientes(df)
     assert "Previsão" not in texto
-    assert "Situação: Em transito" in texto
+    assert "*Situação:* Em transito" in texto
 
 
 def test_mensagem_contem_dados_da_carga():
     df = pd.DataFrame([_pedido()])
     texto = mensagem.montar_mensagem_clientes(df)
-    assert "Remetente: Remetente Teste" in texto
-    assert "Pagador: Pagador Teste" in texto
-    assert "NF: 555" in texto
-    assert "Peso: 10,50 kg" in texto
-    assert "Vr Frete: R$ 100,00" in texto
+    assert "*Remetente:* Remetente Teste" in texto
+    assert "*Pagador:* Pagador Teste" in texto
+    assert "*NF:* 555" in texto
+    assert "*Peso:* 10,50 kg" in texto
+    assert "*Vr Frete:* R$ 100,00" in texto
+
+
+def test_mensagem_titulo_em_negrito():
+    df = pd.DataFrame([_pedido()])
+    texto = mensagem.montar_mensagem_clientes(df, data_referencia="09/08/2026")
+    assert "*POSIÇÃO DE CARGAS — 09/08/2026*" in texto
