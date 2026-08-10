@@ -123,3 +123,36 @@ def test_mensagem_titulo_em_negrito():
     df = pd.DataFrame([_pedido()])
     texto = mensagem.montar_mensagem_clientes(df, data_referencia="09/08/2026")
     assert "*POSIÇÃO DE CARGAS — 09/08/2026*" in texto
+
+
+def test_sugestao_situacao_troca_cte_autorizado_sem_manifesto():
+    pedido = pd.Series(_pedido(
+        status="CT-e autorizado com 1 volume e 12 Kg. Destino: RN/NATAL. Previsao de entrega: 07/08/26",
+        primeiro_manifesto="",
+        ultimo_manifesto="",
+    ))
+    assert mensagem.sugestao_situacao(pedido) == "No depósito em São Paulo aguardando embarque"
+
+
+def test_sugestao_situacao_mantem_cte_autorizado_se_ja_embarcado():
+    # Se já tem manifesto, o CT-e não é mais a "última" situação real —
+    # não faz sentido essa troca (na prática nem deveria aparecer assim).
+    pedido = pd.Series(_pedido(
+        status="CT-e autorizado com 1 volume e 12 Kg. Destino: RN/NATAL. Previsao de entrega: 07/08/26",
+        primeiro_manifesto="GRU002415-5",
+        ultimo_manifesto="",
+    ))
+    assert mensagem.sugestao_situacao(pedido) != "No depósito em São Paulo aguardando embarque"
+
+
+def test_mensagem_cte_autorizado_sai_com_frase_fixa_e_sem_previsao():
+    df = pd.DataFrame([_pedido(
+        status="CT-e autorizado com 1 volume e 12 Kg. Destino: RN/NATAL. Previsao de entrega: 07/08/26",
+        previsao_entrega="07/08/2026",
+        primeiro_manifesto="",
+        ultimo_manifesto="",
+    )])
+    texto = mensagem.montar_mensagem_clientes(df)
+    assert "*Situação:* No depósito em São Paulo aguardando embarque" in texto
+    assert "07/08" not in texto
+    assert "Previsao de entrega" not in texto

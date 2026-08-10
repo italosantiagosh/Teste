@@ -66,11 +66,42 @@ def _previsao_bruta(pedido: pd.Series) -> object:
     return None
 
 
+# Quando a carga ainda não foi embarcada (sem número de manifesto), o
+# sistema registra só a emissão do CT-e como última ocorrência (ex.:
+# "CT-e autorizado com 1 volume e 12 Kg. Destino: RN/NATAL. Previsao de
+# entrega: 07/08/26") — texto técnico demais pro cliente, e a "previsão"
+# ali é só a data padrão do sistema, não uma previsão real de embarque.
+_TERMOS_CTE_AUTORIZADO = ("cte autorizado", "ct-e autorizado")
+_SITUACAO_AGUARDANDO_EMBARQUE = "No depósito em São Paulo aguardando embarque"
+
+
+def _embarcado(pedido: pd.Series) -> bool:
+    for coluna in ("primeiro_manifesto", "ultimo_manifesto"):
+        if coluna in pedido.index:
+            valor = pedido.get(coluna)
+            if pd.notna(valor) and str(valor).strip():
+                return True
+    return False
+
+
+def _aguardando_embarque(pedido: pd.Series) -> bool:
+    if _embarcado(pedido):
+        return False
+    status_normalizado = normalizar_texto(_valor(pedido, "status", "situacao_mdfe", padrao=""))
+    return any(termo in status_normalizado for termo in _TERMOS_CTE_AUTORIZADO)
+
+
 def sugestao_situacao(pedido: pd.Series) -> str:
     """Situação sugerida a partir dos dados do sistema — ponto de partida
     para o operador confirmar ou reescrever. Não inclui a previsão: ela
     fica só na planilha (coluna previsao_entrega) para análise, não na
-    mensagem ao cliente."""
+    mensagem ao cliente.
+
+    Para cargas ainda não embarcadas com o texto padrão de emissão do
+    CT-e, troca a sugestão por uma frase fixa mais amigável ao cliente.
+    """
+    if _aguardando_embarque(pedido):
+        return _SITUACAO_AGUARDANDO_EMBARQUE
     return _valor(pedido, "status", "situacao_mdfe")
 
 
@@ -80,13 +111,15 @@ def revisar_situacoes_interativo(pedidos: pd.DataFrame) -> dict[int, str]:
     achar melhor — é o mesmo texto livre que era escrito manualmente antes
     (ex.: "Em rota para entrega amanhã terça"), só que com uma sugestão
     pronta. A previsão mostrada aqui é só apoio para a decisão — não entra
-    na mensagem final.
+    na mensagem final. Para cargas aguardando embarque (ver
+    `_aguardando_embarque`), nem a previsão é mostrada — a data que o
+    sistema traz nesse caso não é confiável.
     """
     situacoes: dict[int, str] = {}
     print("\nRevisão da situação de cada carga (Enter mantém o texto sugerido):")
     for indice, pedido in pedidos.iterrows():
         sugestao = sugestao_situacao(pedido)
-        previsao = _formatar_data(_previsao_bruta(pedido))
+        previsao = "NÃO DEFINIDA" if _aguardando_embarque(pedido) else _formatar_data(_previsao_bruta(pedido))
         identificacao = _valor(pedido, "nf", "pedido", padrao="?")
         resposta = input(
             f"NF/Pedido {identificacao} — previsão: {previsao} — [{sugestao}]: "

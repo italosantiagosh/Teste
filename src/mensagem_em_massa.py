@@ -35,8 +35,11 @@ _ROTULOS_SAIDA = ["Destinatário", "Telefone", "Qtd. Cargas", "Parte", "Abrir Wh
 # "https://web.whatsapp.com/send?phone=...&text=". Por isso o limite de
 # texto por link aqui é bem menor que o usado ao abrir direto no
 # navegador (`mensagem.dividir_mensagem`, limite=3500 — sem essa
-# restrição do Excel).
-_LIMITE_TEXTO_POR_LINK = 900
+# restrição do Excel). 1100 foi calibrado testando com um relatório real:
+# a maior URL gerada ficou em ~1930 caracteres, com boa margem — e reduz
+# bastante quantos destinatários precisam de mais de uma mensagem,
+# comparado a um limite mais conservador.
+_LIMITE_TEXTO_POR_LINK = 1100
 
 
 def _detectar_colunas_contato(df: pd.DataFrame) -> tuple[str, str]:
