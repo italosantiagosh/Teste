@@ -1,6 +1,6 @@
 """Montagem de mensagens de texto com a posição de cargas, no formato de
-tabela usado manualmente antes (Remetente/Pagador/Cidade/NF/Peso/Vol/Vr
-Frete/Motorista/Situação), podendo juntar mais de um cliente na mesma
+tabela usado manualmente antes (Remetente/Destinatário/Cidade/NF/Peso/Vol/
+Vr Frete/Motorista/Situação), podendo juntar mais de um cliente na mesma
 mensagem.
 """
 from __future__ import annotations
@@ -270,7 +270,7 @@ def montar_mensagem_clientes(
     data_referencia: str | None = None,
 ) -> str:
     """Monta a mensagem de posição de cargas no formato de tabela
-    (Remetente/Pagador/Cidade/NF/Peso/Vol/Vr Frete/Motorista/Situação).
+    (Remetente/Destinatário/Cidade/NF/Peso/Vol/Vr Frete/Motorista/Situação).
 
     Os títulos de cada campo saem em *negrito* usando a formatação nativa
     do WhatsApp (texto entre asteriscos) — o WhatsApp não tem sublinhado,
@@ -278,7 +278,7 @@ def montar_mensagem_clientes(
 
     `pedidos` pode conter cargas de mais de um cliente juntas (ver
     `src.clientes.selecionar_varios_clientes_interativo`) — cada carga
-    aparece com seu próprio remetente/pagador na linha.
+    aparece com seu próprio remetente/destinatário na linha.
     """
     if pedidos.empty:
         raise ValueError("Não há cargas para montar a mensagem.")
@@ -289,7 +289,7 @@ def montar_mensagem_clientes(
     linhas: list[str] = []
     for indice, pedido in pedidos.iterrows():
         remetente = _valor(pedido, "remetente")
-        pagador = _valor(pedido, "pagador")
+        destinatario = _valor(pedido, "cliente")
         cidade = _valor(pedido, "cidade")
         nf = _valor(pedido, "nf")
         peso = _formatar_peso(pedido.get("peso_real"))
@@ -301,7 +301,7 @@ def montar_mensagem_clientes(
         linhas.append(
             "\n".join(
                 [
-                    f"• *Remetente:* {remetente} | *Pagador:* {pagador}",
+                    f"• *Remetente:* {remetente} | *Destinatário:* {destinatario}",
                     f"  *Cidade:* {cidade} | *NF:* {nf} | *Peso:* {peso} | *Vol:* {volumes} | *Vr Frete:* {frete}",
                     f"  *Motorista:* {motorista}",
                     f"  *Situação:* {situacao}",

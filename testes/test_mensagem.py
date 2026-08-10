@@ -113,7 +113,7 @@ def test_mensagem_contem_dados_da_carga():
     df = pd.DataFrame([_pedido()])
     texto = mensagem.montar_mensagem_clientes(df)
     assert "*Remetente:* Remetente Teste" in texto
-    assert "*Pagador:* Pagador Teste" in texto
+    assert "*Destinatário:* Cliente Teste" in texto
     assert "*NF:* 555" in texto
     assert "*Peso:* 10,50 kg" in texto
     assert "*Vr Frete:* R$ 100,00" in texto
